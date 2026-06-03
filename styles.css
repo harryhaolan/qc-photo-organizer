@@ -268,83 +268,38 @@ main { padding-bottom: var(--bar-space); }
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* ===== Group description & defect photos ===== */
-.group-desc { margin: -4px 0 12px; font-size: 13px; color: var(--muted); }
-
-.defect-grid {
-  display: grid;
-  gap: clamp(12px, 2vw, 18px);
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  margin-bottom: 12px;
-}
-.defect-item {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  padding: 10px;
-  display: flex; flex-direction: column; gap: 8px;
-  animation: slot-in .28s ease both;
-}
-.defect-thumb-wrap {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  background: var(--surface-2);
-}
-.defect-thumb {
-  width: 100%; height: 100%; object-fit: cover; display: block;
-  opacity: 0; transform: scale(1.03);
-  transition: opacity .28s ease, transform .28s ease;
-}
-.defect-thumb.is-loaded { opacity: 1; transform: scale(1); }
-.defect-item[data-state="nopreview"] .defect-thumb { display: none; }
-.defect-nopreview {
-  position: absolute; inset: 0;
-  display: none; flex-direction: column; align-items: center; justify-content: center;
-  gap: 6px; padding: 10px; text-align: center; color: var(--muted);
-}
-.defect-item[data-state="nopreview"] .defect-nopreview { display: flex; }
-.defect-filename {
-  font-size: 12px; color: #475569; word-break: break-all;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.defect-remove {
-  position: absolute; top: 6px; right: 6px;
-  width: 28px; height: 28px; border: none; border-radius: 50%;
-  background: rgba(15, 23, 42, .55); color: #fff;
-  font-size: 14px; line-height: 1; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background .15s ease, transform .15s ease;
-}
-.defect-remove:hover { background: rgba(15, 23, 42, .75); }
-.defect-remove:active { transform: scale(.9); }
-.defect-note {
-  width: 100%; resize: vertical; min-height: 40px;
-  font-size: 16px; font-family: inherit; line-height: 1.4;
-  padding: 8px 10px;
-  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface); color: var(--text);
-  transition: border-color .18s ease, box-shadow .18s ease;
-}
-.defect-note::placeholder { color: #94a3b8; }
-.defect-note:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-
-.defect-add {
+/* ===== Per-surface defect toggle ===== */
+.slot__defect {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 12px 18px; min-height: 44px;
-  border: 1.5px dashed var(--border-strong); border-radius: var(--radius-sm);
-  background: var(--surface); color: var(--accent);
-  font-size: 15px; font-weight: 600; cursor: pointer;
-  transition: border-color .18s ease, background .18s ease, transform .12s ease;
+  align-self: flex-start;
+  font-size: 14px; color: #334155;
+  cursor: pointer; user-select: none;
+  padding: 2px 0;
 }
-.defect-add:hover { border-color: var(--accent); background: var(--accent-soft); }
-.defect-add:active { transform: scale(.98); }
-.defect-add.is-dragover { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.01); }
-.defect-add__icon { width: 20px; height: 20px; fill: currentColor; }
+.slot__defect-check {
+  width: 18px; height: 18px;
+  accent-color: var(--danger);
+  cursor: pointer; flex-shrink: 0;
+}
+.slot[data-defect="on"] {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 1px #fca5a5, var(--shadow-sm);
+}
+.slot[data-defect="on"] .slot__defect { color: var(--danger); font-weight: 600; }
+.slot__note:disabled {
+  background: var(--surface-2);
+  color: #94a3b8;
+  cursor: not-allowed;
+}
 
-.hist-detail-subhead { margin: 18px 0 10px; font-size: 14px; font-weight: 700; }
+/* history: per-surface defect badge */
+.hist-defect-badge {
+  margin-left: 6px;
+  font-size: 11px; font-weight: 600;
+  color: var(--danger); background: #fee2e2;
+  padding: 1px 7px; border-radius: 999px;
+  vertical-align: middle;
+}
 
 /* ===== Sticky action bar ===== */
 .action-bar {

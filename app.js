@@ -1,11 +1,11 @@
 /*
  * QC Photo Organizer — client-only logic.
- * Users fill in a product model + unit number, attach up to 11 photos (one per
- * fixed surface) with optional defect notes, plus any number of defect close-up
- * photos. Export is a ZIP that unzips into a single folder `{model}-{unit}` with
- * three sub-folders — 外部 / 内部 / 瑕疵 — containing `{model}-{unit}-{part}.{ext}`
- * (and `{model}-{unit}-瑕疵-NN.{ext}`) files, plus a `质检备注.csv` manifest.
- * Everything runs in the browser; no backend, no build step.
+ * Users fill in a product model + unit number and attach up to 11 photos (one
+ * per fixed surface). Each surface has a "has defect" checkbox; when checked,
+ * its note becomes editable and the photo is also copied into a defect folder.
+ * Export is a ZIP that unzips into a single folder `{model}-{unit}` with sub-
+ * folders 外部 / 内部 (all photos) and 瑕疵 (flagged photos, under 外部/内部),
+ * plus a `质检备注.csv` manifest. Everything runs in the browser; no backend.
  */
 (function () {
   'use strict';
@@ -25,7 +25,6 @@
     { id: 'foot',        label: '脚板',        group: 'internal' },
   ];
   const TOTAL = PARTS.length; // 11
-  // Sub-folder name inside the ZIP for each group / for defects.
   const GROUP_FOLDER = { external: '外部', internal: '内部' };
   const DEFECT_FOLDER = '瑕疵';
   const GROUP_TOTALS = PARTS.reduce(function (acc, p) {
@@ -37,17 +36,15 @@
   const state = {
     model: '',
     unit: '01',
-    slots: {},        // id -> { file, note, previewUrl, ext }
-    defects: [],      // [{ id, file, note, previewUrl, ext }]
+    slots: {},        // id -> { file, note, previewUrl, ext, hasDefect }
     status: 'idle',   // 'idle' | 'generating' | 'ready'
     history: [],      // newest first; see recordHistory()
     lastBlob: null,   // current export blob, for the "下载" button
     lastFolder: '',
   };
   PARTS.forEach(function (p) {
-    state.slots[p.id] = { file: null, note: '', previewUrl: null, ext: '' };
+    state.slots[p.id] = { file: null, note: '', previewUrl: null, ext: '', hasDefect: false };
   });
-  var defectSeq = 0; // monotonic id source for defect cards
 
   // ---- DOM refs (script is deferred, so the DOM is ready) ----
   const els = {
@@ -57,9 +54,6 @@
     folderPreview: document.getElementById('folder-preview'),
     countNum: document.getElementById('count-num'),
     countDefect: document.getElementById('count-defect'),
-    defectGrid: document.getElementById('defect-grid'),
-    defectInput: document.getElementById('defect-input'),
-    defectCountLabel: document.getElementById('defect-count-label'),
     historyBtn: document.getElementById('history-btn'),
     historyCount: document.getElementById('history-count'),
     generateBtn: document.getElementById('generate-btn'),
@@ -182,7 +176,9 @@
   }
 
   function countDefects() {
-    return state.defects.filter(function (d) { return d.file; }).length;
+    var n = 0;
+    for (var i = 0; i < PARTS.length; i++) if (state.slots[PARTS[i].id].hasDefect) n++;
+    return n;
   }
 
   function triggerDownload(blob, filename) {
@@ -233,7 +229,11 @@
             '<span class="slot__nopreview-tag">已选择（无法预览）</span>' +
           '</div>' +
         '</label>' +
-        '<textarea class="slot__note" rows="2" placeholder="瑕疵备注（可选，方便溯源）" aria-label="' + l + ' 瑕疵备注"></textarea>' +
+        '<label class="slot__defect">' +
+          '<input class="slot__defect-check" type="checkbox" aria-label="' + l + ' 有瑕疵" />' +
+          '<span>有瑕疵</span>' +
+        '</label>' +
+        '<textarea class="slot__note" rows="2" disabled placeholder="勾选「有瑕疵」后填写备注" aria-label="' + l + ' 瑕疵备注"></textarea>' +
       '</div>';
   }
 
@@ -277,77 +277,6 @@
     }
   }
 
-  // ===================== Defect rendering =====================
-
-  function defectMarkup(d) {
-    return '' +
-      '<div class="defect-item" data-defect-id="' + d.id + '" data-state="nopreview">' +
-        '<div class="defect-thumb-wrap">' +
-          '<img class="defect-thumb" alt="瑕疵照片预览" />' +
-          '<div class="defect-nopreview">' +
-            '<span class="defect-filename"></span>' +
-            '<span class="slot__nopreview-tag">无法预览</span>' +
-          '</div>' +
-          '<button class="defect-remove" type="button" aria-label="移除这张瑕疵照片">✕</button>' +
-        '</div>' +
-        '<textarea class="defect-note" rows="2" placeholder="瑕疵说明（可选）" aria-label="瑕疵说明"></textarea>' +
-      '</div>';
-  }
-
-  function hydrateDefectCard(card, d) {
-    var img = card.querySelector('.defect-thumb');
-    var fn = card.querySelector('.defect-filename');
-    card.querySelector('.defect-note').value = d.note || '';
-    if (d.previewUrl) {
-      card.dataset.state = 'preview';
-      img.onload = function () { img.classList.add('is-loaded'); };
-      img.onerror = function () {
-        if (d.previewUrl) { URL.revokeObjectURL(d.previewUrl); d.previewUrl = null; }
-        card.dataset.state = 'nopreview';
-        fn.textContent = d.file ? d.file.name : '';
-      };
-      img.src = d.previewUrl;
-    } else {
-      card.dataset.state = 'nopreview';
-      fn.textContent = d.file ? d.file.name : '';
-    }
-  }
-
-  function appendDefectCard(d) {
-    els.defectGrid.insertAdjacentHTML('beforeend', defectMarkup(d));
-    hydrateDefectCard(els.defectGrid.lastElementChild, d);
-  }
-
-  function addDefectFiles(fileList) {
-    Array.prototype.slice.call(fileList || []).forEach(function (file) {
-      var d = {
-        id: 'd' + (++defectSeq),
-        file: file,
-        note: '',
-        previewUrl: isRenderable(file) ? URL.createObjectURL(file) : null,
-        ext: fileExt(file),
-      };
-      state.defects.push(d);
-      appendDefectCard(d);
-    });
-    updateCounts();
-    markDirty();
-    updateActionBar();
-  }
-
-  function removeDefect(id) {
-    var idx = state.defects.findIndex(function (d) { return d.id === id; });
-    if (idx < 0) return;
-    var d = state.defects[idx];
-    if (d.previewUrl) URL.revokeObjectURL(d.previewUrl);
-    state.defects.splice(idx, 1);
-    var card = els.defectGrid.querySelector('[data-defect-id="' + id + '"]');
-    if (card) card.remove();
-    updateCounts();
-    markDirty();
-    updateActionBar();
-  }
-
   // ===================== Shared UI updates =====================
 
   function updateCounts() {
@@ -360,7 +289,6 @@
     document.querySelector('[data-group-count="external"]').textContent = byGroup.external + '/' + GROUP_TOTALS.external;
     document.querySelector('[data-group-count="internal"]').textContent = byGroup.internal + '/' + GROUP_TOTALS.internal;
     var dc = countDefects();
-    els.defectCountLabel.textContent = dc + ' 张';
     els.countDefect.textContent = dc > 0 ? (' · 瑕疵 ' + dc) : '';
   }
 
@@ -382,8 +310,8 @@
     } else if (state.status === 'ready') {
       els.hint.textContent = '已生成，可下载或继续“下一台”';
       els.hint.dataset.tone = 'ok';
-    } else if (pc + dc > 0) {
-      els.hint.textContent = '将导出 ' + pc + ' 张部位照片' + (dc > 0 ? ' + ' + dc + ' 张瑕疵' : '') + ' + 备注';
+    } else if (pc > 0) {
+      els.hint.textContent = '将导出 ' + pc + ' 张照片' + (dc > 0 ? '（其中 ' + dc + ' 项有瑕疵）' : '') + ' + 备注';
       els.hint.dataset.tone = '';
     } else {
       els.hint.textContent = '可不拍照，仅生成备注清单';
@@ -435,8 +363,24 @@
     if (slot.previewUrl) { URL.revokeObjectURL(slot.previewUrl); slot.previewUrl = null; }
     slot.file = null;
     slot.ext = '';
-    // Note text is intentionally kept (e.g. "该部位缺失/损坏").
+    // The defect flag and note are intentionally kept (e.g. "surface missing").
     updateSlotView(id);
+    updateCounts();
+    markDirty();
+    updateActionBar();
+  }
+
+  function setDefect(id, on) {
+    var slot = state.slots[id];
+    slot.hasDefect = on;
+    var card = cardFor(id);
+    if (card) {
+      card.dataset.defect = on ? 'on' : '';
+      var note = card.querySelector('.slot__note');
+      note.disabled = !on;
+      note.placeholder = on ? '请描述瑕疵（方便溯源）' : '勾选「有瑕疵」后填写备注';
+      if (on) { try { note.focus(); } catch (e) {} }
+    }
     updateCounts();
     markDirty();
     updateActionBar();
@@ -444,7 +388,7 @@
 
   // ===================== ZIP + CSV =====================
 
-  function buildCsv(model, unit, partCount, defectCount, rows, defectRows) {
+  function buildCsv(model, unit, partCount, defectCount, rows) {
     var BOM = '\uFEFF'; // makes Excel/WPS read the file as UTF-8 (avoids garbled Chinese)
     var CRLF = '\r\n';
     var L = [];
@@ -452,22 +396,23 @@
     L.push('编号,' + csvEscape(unit));
     L.push('生成时间,' + csvEscape(formatNow()));
     L.push('部位照片,' + partCount + '/' + TOTAL);
-    L.push('瑕疵照片,' + defectCount + ' 张');
+    L.push('瑕疵,' + defectCount + ' 项');
     L.push('');
-    L.push('类别,部位/序号,是否有照片,文件名,备注');
+    L.push('类别,部位,是否有照片,是否有瑕疵,文件名,瑕疵备注');
     rows.forEach(function (r) {
-      L.push([csvEscape(r.category), csvEscape(r.label), r.has ? '是' : '否', csvEscape(r.path), csvEscape(r.note)].join(','));
-    });
-    defectRows.forEach(function (r) {
-      L.push([csvEscape(DEFECT_FOLDER), csvEscape(String(r.index)), '是', csvEscape(r.path), csvEscape(r.note)].join(','));
+      L.push([
+        csvEscape(r.category), csvEscape(r.label),
+        r.has ? '是' : '否', r.defect ? '是' : '否',
+        csvEscape(r.path), csvEscape(r.defect ? r.note : ''),
+      ].join(','));
     });
     return BOM + L.join(CRLF) + CRLF;
   }
 
-  // Build the export blob from any slots + defects (shared by generate +
-  // re-download). Photos are already compressed, so STORE keeps it fast on
-  // phones. Sub-folders 外部 / 内部 / 瑕疵 are created lazily (no empty folders).
-  function buildZipBlob(model, unit, slots, defects) {
+  // Build the export blob from any slots map (shared by generate + re-download).
+  // Photos go into 外部/内部; any flagged photo is ALSO copied into 瑕疵/外部 or
+  // 瑕疵/内部. STORE (no deflate) keeps it fast on phones; sub-folders are lazy.
+  function buildZipBlob(model, unit, slots) {
     var folderBase = sanitizeFilename(model) + '-' + sanitizeFilename(unit);
     var zip = new JSZip();
     var root = zip.folder(folderBase);
@@ -484,35 +429,30 @@
 
     var rows = [];
     var partCount = 0;
+    var defectCount = 0;
     PARTS.forEach(function (part) {
       var slot = slots[part.id] || {};
+      var groupDir = GROUP_FOLDER[part.group];
       var path = '';
       if (slot.file) {
         var ext = slot.ext || extFromMime(slot.file.type) || 'bin';
-        path = addTo(GROUP_FOLDER[part.group], folderBase + '-' + sanitizeFilename(part.label) + '.' + ext, slot.file);
+        var fname = folderBase + '-' + sanitizeFilename(part.label) + '.' + ext;
+        path = addTo(groupDir, fname, slot.file);
         partCount++;
+        if (slot.hasDefect) addTo(DEFECT_FOLDER + '/' + groupDir, fname, slot.file); // copy into defect folder
       }
+      if (slot.hasDefect) defectCount++;
       rows.push({
-        category: GROUP_FOLDER[part.group],
+        category: groupDir,
         label: part.label,
         has: !!slot.file,
+        defect: !!slot.hasDefect,
         path: path,
         note: (slot.note || '').trim(),
       });
     });
 
-    var defectRows = [];
-    var defectCount = 0;
-    (defects || []).forEach(function (d) {
-      if (!d.file) return;
-      defectCount++;
-      var ext = d.ext || extFromMime(d.file.type) || 'bin';
-      var idx = String(defectCount).padStart(2, '0');
-      var path = addTo(DEFECT_FOLDER, folderBase + '-瑕疵-' + idx + '.' + ext, d.file);
-      defectRows.push({ index: defectCount, path: path, note: (d.note || '').trim() });
-    });
-
-    root.file('质检备注.csv', buildCsv(model, unit, partCount, defectCount, rows, defectRows));
+    root.file('质检备注.csv', buildCsv(model, unit, partCount, defectCount, rows));
 
     return zip.generateAsync({ type: 'blob', compression: 'STORE' }).then(function (blob) {
       return { blob: blob, folderBase: folderBase, count: partCount, defectCount: defectCount };
@@ -540,7 +480,7 @@
     var model = state.model.trim();
     if (!model) { updateActionBar(); return; }
 
-    if (countPhotos() === 0 && countDefects() === 0) {
+    if (countPhotos() === 0) {
       if (!window.confirm('未选择任何照片，仍要生成（仅包含备注清单）？')) return;
     }
 
@@ -551,12 +491,12 @@
     setStatus('generating');
     showOverlay('spinner', '正在生成…');
 
-    buildZipBlob(model, unit, state.slots, state.defects).then(function (res) {
+    buildZipBlob(model, unit, state.slots).then(function (res) {
       state.lastBlob = res.blob;
       state.lastFolder = res.folderBase;
       triggerDownload(res.blob, res.folderBase + '.zip');
       recordHistory(res.folderBase, res.count, res.defectCount, model, unit);
-      var extra = res.defectCount > 0 ? '（含瑕疵 ' + res.defectCount + '）' : '';
+      var extra = res.defectCount > 0 ? '（瑕疵 ' + res.defectCount + ' 项）' : '';
       showOverlay('check', '已生成 ' + res.folderBase + '.zip · 共 ' + res.count + ' 张' + extra);
       setStatus('ready');
       setTimeout(hideOverlay, 1500);
@@ -572,10 +512,7 @@
     var snap = {};
     PARTS.forEach(function (p) {
       var s = state.slots[p.id];
-      snap[p.id] = { file: s.file, note: s.note, ext: s.ext };
-    });
-    var dsnap = state.defects.filter(function (d) { return d.file; }).map(function (d) {
-      return { file: d.file, note: d.note, ext: d.ext };
+      snap[p.id] = { file: s.file, note: s.note, ext: s.ext, hasDefect: s.hasDefect };
     });
     state.history.unshift({
       folderName: folderBase,
@@ -585,7 +522,6 @@
       photoCount: count,
       defectCount: defectCount,
       slots: snap,
-      defects: dsnap,
     });
     updateActionBar();
   }
@@ -594,20 +530,14 @@
     PARTS.forEach(function (p) {
       var s = state.slots[p.id];
       if (s.previewUrl) { URL.revokeObjectURL(s.previewUrl); s.previewUrl = null; }
-      s.file = null; s.ext = ''; s.note = '';
+      s.file = null; s.ext = ''; s.note = ''; s.hasDefect = false;
     });
-    state.defects.forEach(function (d) { if (d.previewUrl) URL.revokeObjectURL(d.previewUrl); });
-    state.defects = [];
-    els.defectGrid.innerHTML = '';
-
     state.unit = incrementUnit(effectiveUnit());
     els.unitInput.value = state.unit;
     state.lastBlob = null;
     state.lastFolder = '';
 
-    PARTS.forEach(function (p) { updateSlotView(p.id); });
-    document.querySelectorAll('.slot__note').forEach(function (t) { t.value = ''; });
-
+    renderSlots(); // fresh DOM: empty slots, unchecked defects, disabled notes
     updateCounts();
     updateFolderPreview();
     setStatus('idle');
@@ -680,51 +610,37 @@
     els.historyBack.hidden = false;
     els.historyTitle.textContent = h.folderName;
 
-    var partCards = PARTS.map(function (p) {
+    var cards = PARTS.map(function (p) {
       var s = h.slots[p.id] || {};
       var note = (s.note || '').trim();
+      var badge = s.hasDefect ? '<span class="hist-defect-badge">有瑕疵</span>' : '';
+      var noteHtml = s.hasDefect
+        ? '<div class="hist-detail-note' + (note ? '' : ' is-empty') + '">' + (note ? escapeHtml(note) : '（未填写备注）') + '</div>'
+        : '';
       return '' +
         '<div class="hist-detail-item">' +
           detailThumb(s.file, p.label) +
           '<div class="hist-detail-meta">' +
-            '<div class="hist-detail-part">' + escapeHtml(p.label) + '</div>' +
-            '<div class="hist-detail-note' + (note ? '' : ' is-empty') + '">' + (note ? escapeHtml(note) : '无瑕疵备注') + '</div>' +
+            '<div class="hist-detail-part">' + escapeHtml(p.label) + badge + '</div>' +
+            noteHtml +
           '</div>' +
         '</div>';
     }).join('');
 
-    var defectSection = '';
-    if (h.defects && h.defects.length) {
-      var defectCards = h.defects.map(function (d, i) {
-        var note = (d.note || '').trim();
-        return '' +
-          '<div class="hist-detail-item">' +
-            detailThumb(d.file, '瑕疵 ' + (i + 1)) +
-            '<div class="hist-detail-meta">' +
-              '<div class="hist-detail-part">瑕疵 ' + (i + 1) + '</div>' +
-              '<div class="hist-detail-note' + (note ? '' : ' is-empty') + '">' + (note ? escapeHtml(note) : '无说明') + '</div>' +
-            '</div>' +
-          '</div>';
-      }).join('');
-      defectSection = '<h3 class="hist-detail-subhead">瑕疵照片（' + h.defects.length + '）</h3>' +
-        '<div class="hist-detail-grid">' + defectCards + '</div>';
-    }
-
-    var meta = h.photoCount + ' 张部位照片' + (h.defectCount ? ' · ' + h.defectCount + ' 张瑕疵' : '');
+    var meta = h.photoCount + ' 张照片' + (h.defectCount ? ' · ' + h.defectCount + ' 项瑕疵' : '');
     els.historyBody.innerHTML = '' +
       '<div class="hist-detail-head">' +
         '<span>' + meta + ' · ' + escapeHtml(h.timestamp) + '</span>' +
         '<button class="btn btn--secondary" type="button" data-hist-dl="' + index + '">重新下载</button>' +
       '</div>' +
-      '<div class="hist-detail-grid">' + partCards + '</div>' +
-      defectSection;
+      '<div class="hist-detail-grid">' + cards + '</div>';
   }
 
   function reDownload(index) {
     var h = state.history[index];
     if (!h) return;
     showToast('正在打包…');
-    buildZipBlob(h.model, h.unit, h.slots, h.defects).then(function (res) {
+    buildZipBlob(h.model, h.unit, h.slots).then(function (res) {
       triggerDownload(res.blob, res.folderBase + '.zip');
     }).catch(function (err) {
       console.error(err);
@@ -749,73 +665,56 @@
       updateActionBar();
     });
 
-    // Slot file selection (delegated)
+    // Slot file selection + defect checkbox (delegated change)
     els.main.addEventListener('change', function (e) {
       var input = e.target.closest('.slot__input');
-      if (!input) return;
-      var card = input.closest('.slot');
-      var file = input.files && input.files[0];
-      if (file) setSlotFile(card.dataset.partId, file);
-      input.value = ''; // allow re-selecting the same file later
-    });
-
-    // Defect-note + slot-note edits (delegated on main)
-    els.main.addEventListener('input', function (e) {
-      var slotNote = e.target.closest('.slot__note');
-      if (slotNote) {
-        state.slots[slotNote.closest('.slot').dataset.partId].note = slotNote.value;
-        markDirty();
+      if (input) {
+        var fcard = input.closest('.slot');
+        var file = input.files && input.files[0];
+        if (file) setSlotFile(fcard.dataset.partId, file);
+        input.value = ''; // allow re-selecting the same file later
         return;
       }
-      var defectNote = e.target.closest('.defect-note');
-      if (defectNote) {
-        var id = defectNote.closest('.defect-item').dataset.defectId;
-        var d = state.defects.find(function (x) { return x.id === id; });
-        if (d) { d.note = defectNote.value; markDirty(); }
+      var chk = e.target.closest('.slot__defect-check');
+      if (chk) {
+        setDefect(chk.closest('.slot').dataset.partId, chk.checked);
       }
     });
 
-    // Remove buttons (slot + defect, delegated on main)
+    // Defect notes (delegated input)
+    els.main.addEventListener('input', function (e) {
+      var ta = e.target.closest('.slot__note');
+      if (!ta) return;
+      state.slots[ta.closest('.slot').dataset.partId].note = ta.value;
+      markDirty();
+    });
+
+    // Remove photo (delegated click)
     els.main.addEventListener('click', function (e) {
       var rm = e.target.closest('.slot__remove');
-      if (rm) { clearSlot(rm.closest('.slot').dataset.partId); return; }
-      var drm = e.target.closest('.defect-remove');
-      if (drm) { removeDefect(drm.closest('.defect-item').dataset.defectId); }
+      if (!rm) return;
+      clearSlot(rm.closest('.slot').dataset.partId);
     });
 
-    // Defect photo input (multiple)
-    els.defectInput.addEventListener('change', function () {
-      if (els.defectInput.files && els.defectInput.files.length) addDefectFiles(els.defectInput.files);
-      els.defectInput.value = '';
-    });
-
-    // Drag & drop on desktop — onto a surface slot OR the defect area (delegated)
+    // Drag & drop onto a surface slot (delegated)
     els.main.addEventListener('dragover', function (e) {
-      var zone = e.target.closest('.slot__drop, .defect-add');
-      if (!zone) return;
+      var drop = e.target.closest('.slot__drop');
+      if (!drop) return;
       e.preventDefault();
-      zone.classList.add('is-dragover');
+      drop.classList.add('is-dragover');
     });
     els.main.addEventListener('dragleave', function (e) {
-      var zone = e.target.closest('.slot__drop, .defect-add');
-      if (!zone) return;
-      if (!zone.contains(e.relatedTarget)) zone.classList.remove('is-dragover');
+      var drop = e.target.closest('.slot__drop');
+      if (!drop) return;
+      if (!drop.contains(e.relatedTarget)) drop.classList.remove('is-dragover');
     });
     els.main.addEventListener('drop', function (e) {
-      var slotDrop = e.target.closest('.slot__drop');
-      if (slotDrop) {
-        e.preventDefault();
-        slotDrop.classList.remove('is-dragover');
-        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if (f) setSlotFile(slotDrop.closest('.slot').dataset.partId, f);
-        return;
-      }
-      var defectAdd = e.target.closest('.defect-add');
-      if (defectAdd) {
-        e.preventDefault();
-        defectAdd.classList.remove('is-dragover');
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) addDefectFiles(e.dataTransfer.files);
-      }
+      var drop = e.target.closest('.slot__drop');
+      if (!drop) return;
+      e.preventDefault();
+      drop.classList.remove('is-dragover');
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) setSlotFile(drop.closest('.slot').dataset.partId, file);
     });
 
     // Action bar
@@ -839,10 +738,10 @@
       if (e.key === 'Escape' && !els.historyModal.hidden) closeHistory();
     });
 
-    // Stop the browser from opening a file dropped outside a drop zone.
+    // Stop the browser from opening a file dropped outside a slot.
     window.addEventListener('dragover', function (e) { e.preventDefault(); });
     window.addEventListener('drop', function (e) {
-      if (!(e.target.closest && e.target.closest('.slot__drop, .defect-add'))) e.preventDefault();
+      if (!(e.target.closest && e.target.closest('.slot__drop'))) e.preventDefault();
     });
 
     // Best-effort cleanup of any live object URLs on unload.
@@ -851,7 +750,6 @@
         var s = state.slots[p.id];
         if (s.previewUrl) URL.revokeObjectURL(s.previewUrl);
       });
-      state.defects.forEach(function (d) { if (d.previewUrl) URL.revokeObjectURL(d.previewUrl); });
       revokeDetailUrls();
     });
   }
