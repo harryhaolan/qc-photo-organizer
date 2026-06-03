@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1d4ed8" />
+  <meta name="description" content="按 11 个部位拍照存档，一键生成规范命名的文件夹（型号-编号），方便质检溯源。" />
+  <title>产品质检拍照整理</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="container app-header__inner">
+      <h1 class="app-title">产品质检拍照整理</h1>
+      <p class="app-subtitle">按 11 个部位拍照，一键打包成规范命名的文件夹</p>
+    </div>
+  </header>
+
+  <main class="container" id="main">
+    <!-- Product meta -->
+    <section class="meta-card" aria-label="产品信息">
+      <div class="field">
+        <label for="model-input">产品型号 <span class="req" aria-hidden="true">*</span></label>
+        <input id="model-input" type="text" inputmode="text" autocomplete="off"
+               enterkeyhint="next" placeholder="例如：ABC-100" />
+      </div>
+      <div class="field field--unit">
+        <label for="unit-input">编号</label>
+        <input id="unit-input" type="text" inputmode="text" autocomplete="off"
+               value="01" placeholder="01" />
+      </div>
+      <p class="folder-preview" id="folder-preview" aria-live="polite"></p>
+    </section>
+
+    <!-- Photo slots (injected by app.js from PARTS) -->
+    <section class="group" data-group="external">
+      <h2 class="group-title">
+        <span class="group-name">外部 5 面</span>
+        <span class="group-count" data-group-count="external"></span>
+      </h2>
+      <div class="slot-grid" data-slot-grid="external"></div>
+    </section>
+
+    <section class="group" data-group="internal">
+      <h2 class="group-title">
+        <span class="group-name">内部 6 面</span>
+        <span class="group-count" data-group-count="internal"></span>
+      </h2>
+      <div class="slot-grid" data-slot-grid="internal"></div>
+    </section>
+
+    <!-- Defect close-up photos (variable count) -->
+    <section class="group" data-group="defects">
+      <h2 class="group-title">
+        <span class="group-name">瑕疵照片</span>
+        <span class="group-count" id="defect-count-label">0 张</span>
+      </h2>
+      <p class="group-desc">缺陷特写，可添加任意多张（每张可写说明），导出到「瑕疵」文件夹。</p>
+      <div class="defect-grid" id="defect-grid"></div>
+      <label class="defect-add" id="defect-add">
+        <input id="defect-input" class="visually-hidden" type="file" accept="image/*" capture="environment" multiple />
+        <svg class="defect-add__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+        <span>添加瑕疵照片</span>
+      </label>
+    </section>
+
+    <!-- keeps content clear of the sticky action bar -->
+    <div class="action-bar-spacer" aria-hidden="true"></div>
+  </main>
+
+  <!-- Sticky bottom action bar -->
+  <div class="action-bar" id="action-bar">
+    <div class="container action-bar__inner">
+      <div class="action-bar__status">
+        <span class="count-pill">已选 <strong id="count-num">0</strong>/11<span id="count-defect"></span></span>
+        <button type="button" class="btn btn--ghost" id="history-btn" hidden>
+          记录 <span id="history-count">0</span>
+        </button>
+      </div>
+      <div class="action-bar__actions">
+        <button type="button" class="btn btn--primary" id="generate-btn" disabled>生成</button>
+        <button type="button" class="btn btn--primary" id="download-btn" hidden>下载</button>
+        <button type="button" class="btn btn--secondary" id="next-btn" hidden>下一台</button>
+      </div>
+    </div>
+    <p class="action-bar__hint" id="action-hint">请填写产品型号</p>
+  </div>
+
+  <!-- Generating / success overlay -->
+  <div class="overlay" id="overlay" hidden>
+    <div class="overlay__card" role="status" aria-live="polite">
+      <div class="spinner" id="spinner" aria-hidden="true"></div>
+      <svg class="checkmark" id="checkmark" viewBox="0 0 52 52" hidden aria-hidden="true">
+        <circle class="checkmark__circle" cx="26" cy="26" r="24" fill="none" />
+        <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
+      </svg>
+      <p class="overlay__text" id="overlay-text">正在生成…</p>
+    </div>
+  </div>
+
+  <!-- History modal -->
+  <div class="modal" id="history-modal" hidden>
+    <div class="modal__backdrop" data-close-history></div>
+    <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+      <div class="modal__head">
+        <button type="button" class="modal__back" id="history-back" hidden aria-label="返回列表">‹ 返回</button>
+        <h2 class="modal__title" id="history-modal-title">本次生成记录</h2>
+        <button type="button" class="modal__close" data-close-history aria-label="关闭">✕</button>
+      </div>
+      <div class="modal__body" id="history-body"><!-- list or detail injected by app.js --></div>
+    </div>
+  </div>
+
+  <!-- Lightweight toast -->
+  <div class="toast" id="toast" hidden aria-live="polite"></div>
+
+  <script defer src="lib/jszip.min.js"></script>
+  <script defer src="app.js"></script>
+</body>
+</html>
