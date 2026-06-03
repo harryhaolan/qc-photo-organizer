@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="质检拍照">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#g)"/>
+  <rect x="9" y="8.5" width="7" height="3.6" rx="1.2" fill="#fff"/>
+  <rect x="5.5" y="11" width="21" height="13" rx="2.6" fill="#fff"/>
+  <circle cx="16" cy="17.6" r="4.3" fill="#1d4ed8"/>
+  <circle cx="16" cy="17.6" r="1.9" fill="#fff"/>
+</svg>
