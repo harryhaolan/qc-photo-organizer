@@ -247,26 +247,85 @@ main { padding-bottom: var(--bar-space); }
 }
 .slot__preview img.is-loaded { opacity: 1; transform: scale(1); }
 
-.slot__note {
+/* ===== Per-surface defect gallery ===== */
+.slot__defects {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px dashed #fca5a5;
+  border-radius: var(--radius-sm);
+  background: #fff5f5;
+}
+.slot__defects-list { display: flex; flex-direction: column; gap: 10px; }
+.slot__defects-list:empty { display: none; }
+
+.defect-item {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.defect-item__thumb {
+  flex-shrink: 0;
+  width: 72px; height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+.defect-item__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.defect-item__thumb--none {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; color: var(--muted); font-size: 10px; text-align: center; padding: 4px;
+}
+.defect-item__thumb--none small { color: #94a3b8; word-break: break-all; line-height: 1.2; }
+.defect-item__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.defect-item__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.defect-item__tag {
+  font-size: 12px; font-weight: 700; color: var(--danger);
+  background: #fee2e2; padding: 1px 8px; border-radius: 999px;
+}
+.defect-item__remove {
+  appearance: none; border: none; background: transparent;
+  color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s ease, color .15s ease;
+}
+.defect-item__remove:hover { background: rgba(220, 38, 38, .12); color: var(--danger); }
+.defect-item__note {
   width: 100%;
   resize: vertical;
-  min-height: 44px;
+  min-height: 40px;
   font-size: 16px;
   font-family: inherit;
   line-height: 1.4;
-  padding: 8px 10px;
+  padding: 7px 9px;
   border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text);
   transition: border-color .18s ease, box-shadow .18s ease;
 }
-.slot__note::placeholder { color: #94a3b8; }
-.slot__note:focus {
+.defect-item__note::placeholder { color: #94a3b8; }
+.defect-item__note:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+
+.defect-add { display: inline-flex; align-self: flex-start; cursor: pointer; }
+.defect-add__btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 600; color: var(--danger);
+  background: var(--surface); border: 1.5px dashed #f1a5a5;
+  padding: 8px 14px; border-radius: 999px; min-height: 38px;
+  transition: background .15s ease, border-color .15s ease, transform .12s ease;
+}
+.defect-add:hover .defect-add__btn { background: #fee2e2; border-color: var(--danger); }
+.defect-add:active .defect-add__btn { transform: scale(.97); }
 
 /* ===== Per-surface defect toggle ===== */
 .slot__defect {
@@ -286,11 +345,60 @@ main { padding-bottom: var(--bar-space); }
   box-shadow: 0 0 0 1px #fca5a5, var(--shadow-sm);
 }
 .slot[data-defect="on"] .slot__defect { color: var(--danger); font-weight: 600; }
-.slot__note:disabled {
-  background: var(--surface-2);
-  color: #94a3b8;
-  cursor: not-allowed;
+
+/* ===== Extra files (attachments) ===== */
+.attach-drop {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, transform .12s ease;
 }
+@media (hover: hover) {
+  .attach-drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+}
+.attach-drop:active { transform: scale(.99); }
+.attach-drop.is-dragover {
+  border-color: var(--accent); background: var(--accent-soft); transform: scale(1.005);
+}
+.attach-drop__icon { width: 26px; height: 26px; fill: var(--accent); flex-shrink: 0; opacity: .9; }
+.attach-drop__text { display: flex; flex-direction: column; font-size: 14px; font-weight: 600; color: #334155; }
+.attach-drop__text small { font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.attach-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.attach-list:empty { display: none; }
+.attach-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.attach-item__icon { width: 22px; height: 22px; fill: var(--muted); flex-shrink: 0; }
+.attach-item__name {
+  flex: 1; min-width: 0;
+  font-size: 14px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.attach-item__ext {
+  flex-shrink: 0;
+  font-size: 10px; font-weight: 700; letter-spacing: .4px;
+  color: var(--accent); background: var(--accent-soft);
+  padding: 2px 7px; border-radius: 999px;
+}
+.attach-item__size { flex-shrink: 0; font-size: 12px; color: var(--muted); }
+.attach-item__remove {
+  appearance: none; border: none; background: rgba(220, 38, 38, .1);
+  color: var(--danger); cursor: pointer;
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  font-size: 13px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s ease, transform .15s ease;
+}
+.attach-item__remove:hover { background: rgba(220, 38, 38, .18); }
+.attach-item__remove:active { transform: scale(.9); }
 
 /* history: per-surface defect badge */
 .hist-defect-badge {
@@ -498,6 +606,27 @@ main { padding-bottom: var(--bar-space); }
 .hist-detail-part { font-size: 13px; font-weight: 600; }
 .hist-detail-note { font-size: 12px; color: #334155; margin-top: 3px; word-break: break-word; }
 .hist-detail-note.is-empty { color: #94a3b8; }
+
+/* history: per-surface defect gallery */
+.hist-defect-grid {
+  display: grid; gap: 6px; margin-top: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+}
+.hist-defect-cell {
+  border: 1px solid #fecaca; border-radius: 8px; overflow: hidden; background: #fff5f5;
+}
+.hist-defect-cell .hist-thumb { aspect-ratio: 1 / 1; }
+.hist-defect-note { font-size: 11px; color: #334155; padding: 4px 6px; word-break: break-word; }
+.hist-defect-note.is-empty { color: #94a3b8; }
+
+/* history: attachments list */
+.hist-attach { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.hist-attach__title { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+.hist-attach__item {
+  font-size: 13px; color: #334155; padding: 4px 0; word-break: break-all;
+  border-bottom: 1px solid var(--border);
+}
+.hist-attach__item:last-child { border-bottom: none; }
 
 /* ===== Toast ===== */
 .toast {

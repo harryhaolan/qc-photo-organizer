@@ -50,6 +50,22 @@
       <div class="slot-grid" data-slot-grid="internal"></div>
     </section>
 
+    <!-- Extra files: PDF / Word / image attachments -->
+    <section class="group" data-group="attach">
+      <h2 class="group-title">
+        <span class="group-name">额外文件</span>
+        <span class="group-count" data-attach-count></span>
+      </h2>
+      <label class="attach-drop">
+        <input class="attach-add-input visually-hidden" type="file" multiple
+               accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
+               aria-label="添加额外文件" />
+        <svg class="attach-drop__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4h2v4h10v-4h2ZM13 3v8.17l2.59-2.58L17 10l-5 5-5-5 1.41-1.41L11 11.17V3h2Z"/></svg>
+        <span class="attach-drop__text">点击上传 / 拖拽文件<small>支持 PDF、Word、图片，可多选</small></span>
+      </label>
+      <div class="attach-list" data-attach-list></div>
+    </section>
+
     <!-- keeps content clear of the sticky action bar -->
     <div class="action-bar-spacer" aria-hidden="true"></div>
   </main>
@@ -58,7 +74,7 @@
   <div class="action-bar" id="action-bar">
     <div class="container action-bar__inner">
       <div class="action-bar__status">
-        <span class="count-pill">已选 <strong id="count-num">0</strong>/11<span id="count-defect"></span></span>
+        <span class="count-pill">已选 <strong id="count-num">0</strong>/11<span id="count-defect"></span><span id="count-attach"></span></span>
         <button type="button" class="btn btn--ghost" id="history-btn" hidden>
           记录 <span id="history-count">0</span>
         </button>

@@ -2,16 +2,17 @@
 
 中文文档见 [README_CN.md](./README_CN.md).
 
-A zero-build, client-only web app for product quality-inspection photo archiving. An inspector enters a product model and unit number, attaches up to 11 photos (one per fixed surface), flags any surface that has a defect and describes it, then exports a neatly named, ready-to-archive folder delivered as a ZIP. Everything runs in the browser — no backend and no build step.
+A zero-build, client-only web app for product quality-inspection photo archiving. An inspector enters a product model and unit number, attaches one overview photo per fixed surface, optionally flags a surface as defective and attaches one or more defect photos (each with its own note), and can append supporting files (PDF / Word / image). On submit it exports a neatly named, ready-to-archive folder delivered as a ZIP. Everything runs in the browser — no backend and no build step.
 
 The user interface is in Simplified Chinese (the target users are QC and factory staff).
 
 ## Features
 
-- Eleven fixed surface slots, grouped into external (5) and internal (6). Photos are optional per slot.
-- A per-surface "has defect" checkbox. The defect-note field is enabled only when the box is checked, and each flagged photo is additionally copied into a defect folder organized by external/internal.
+- Eleven fixed surface slots, grouped into external (5) and internal (6). The overview photo is optional per slot.
+- A per-surface "has defect" checkbox. When checked, a defect gallery appears where you can add multiple defect photos (multi-select or drag-and-drop), each with its own note. Defect photos export into a defect folder organized by external/internal.
+- An "extra files" section that accepts multiple PDF / Word / image attachments, exported into a top-level 附件 folder.
 - Standardized file and folder naming for traceability (see the naming contract below).
-- A `质检备注.csv` manifest (UTF-8 with BOM) that records each surface, whether it has a photo, whether it is flagged, the file path, and the defect note. It opens cleanly in Excel, WPS, and Numbers.
+- A `质检备注.csv` manifest (UTF-8 with BOM) with one row per overview photo, per defect photo (with its note), and per attachment. It opens cleanly in Excel, WPS, and Numbers.
 - One-click export that packs a single top-level folder into a ZIP and downloads it (using [JSZip](https://stuk.github.io/jszip/)).
 - A "next unit" action that keeps the model, auto-increments the unit number (01 to 02), and clears the form for the next unit.
 - An in-session history panel to review every unit generated in the session (thumbnails and notes) and re-download any of them.
@@ -29,22 +30,26 @@ For a model `ABC` and unit `01`, the export is `ABC-01.zip`, which unzips to:
 
 ```
 ABC-01/                          unit folder = {model}-{unit}
-├── 外部/                         external surfaces (every photo taken)
+├── 外部/                         external overview photos
 │   ├── ABC-01-正面.jpg           photo = {model}-{unit}-{surface}.{ext}
 │   └── ...
-├── 内部/                         internal surfaces (every photo taken)
+├── 内部/                         internal overview photos
 │   └── ...
-├── 瑕疵/                         flagged photos only (copies)
+├── 瑕疵/                         defect photos (one or more per flagged surface)
 │   ├── 外部/
-│   │   └── ABC-01-正面.jpg       present because 正面 was flagged
+│   │   ├── ABC-01-正面-瑕疵1.jpg  defect photo = {model}-{unit}-{surface}-瑕疵N.{ext}
+│   │   └── ABC-01-正面-瑕疵2.jpg
 │   └── 内部/
-│       └── ABC-01-坐板.jpg
+│       └── ABC-01-坐板-瑕疵1.jpg
+├── 附件/                         extra files (PDF / Word / image), original names
+│   ├── 检验报告.pdf
+│   └── 图纸.docx
 └── 质检备注.csv                  manifest (always included)
 ```
 
-A flagged photo appears twice: once in its normal `外部`/`内部` location and once under `瑕疵/外部` or `瑕疵/内部`. Only sub-folders that contain at least one photo are created.
+Defect photos are independent uploads (close-ups of specific defects); the overview photo stays only in `外部`/`内部`. Only sub-folders that contain at least one file are created.
 
-`质检备注.csv` columns: `类别, 部位, 是否有照片, 是否有瑕疵, 文件名, 瑕疵备注`, preceded by a header block with the model, unit, timestamp, photo count, and defect count.
+`质检备注.csv` columns: `类别, 部位, 类型, 文件名, 瑕疵备注` — one row per overview photo (`类型`=总览), per defect photo (`类型`=瑕疵, with its note), and per attachment (`类型`=附件). A header block precedes the table with the model, unit, timestamp, overview-photo count, defect-photo count, and attachment count.
 
 Model and unit text is sanitized for filesystem safety (characters such as `/ \ : * ? " < > |` become `_`); Chinese characters are preserved as UTF-8 ZIP entry names.
 
