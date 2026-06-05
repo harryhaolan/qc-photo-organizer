@@ -1,0 +1,50 @@
+name: Release and deploy
+
+# Push a version tag (e.g. v1.0.0) on main:
+#   git tag v1.0.0 && git push origin v1.0.0
+# This creates a GitHub Release with auto-generated notes and deploys the
+# tagged version to Netlify production. Requires one repo secret:
+#   NETLIFY_AUTH_TOKEN  - a Netlify personal access token
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # needed to create the GitHub Release
+
+jobs:
+  release-deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Not secret (visible in the dashboard URL); the auth token is the secret.
+      NETLIFY_SITE_ID: 3505a6d6-337b-4dfc-a51f-7ad8498c4878
+    steps:
+      - name: Checkout (the tagged commit)
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release (auto notes)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; skipping creation."
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy to Netlify (production)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          npx --yes netlify-cli deploy \
+            --dir . \
+            --prod \
+            --site "$NETLIFY_SITE_ID" \
+            --auth "$NETLIFY_AUTH_TOKEN" \
+            --message "Release $GITHUB_REF_NAME"

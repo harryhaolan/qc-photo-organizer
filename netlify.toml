@@ -1,0 +1,17 @@
+# Netlify config for a zero-build static site (no build step; serve files as-is).
+[build]
+  publish = "."
+  command = ""
+
+# Long-cache the vendored library (its contents change only on a version bump).
+[[headers]]
+  for = "/lib/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Baseline security headers for everything else.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
