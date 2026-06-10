@@ -4,16 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#1d4ed8" />
-  <meta name="description" content="按 11 个部位拍照存档，一键生成规范命名的文件夹（型号-编号），方便质检溯源。" />
+  <meta name="description" content="按 14 个部位拍照存档，一键生成规范命名的文件夹（型号-编号），方便质检溯源。" />
   <title>产品质检拍照整理</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=19" />
 </head>
 <body>
   <header class="app-header">
     <div class="container app-header__inner">
       <h1 class="app-title">产品质检拍照整理</h1>
-      <p class="app-subtitle">按 11 个部位拍照，一键打包成规范命名的文件夹</p>
+      <p class="app-subtitle">按 14 个部位拍照，一键打包成规范命名的文件夹</p>
     </div>
   </header>
 
@@ -27,8 +27,19 @@
       </div>
       <div class="field field--unit">
         <label for="unit-input">编号</label>
-        <input id="unit-input" type="text" inputmode="text" autocomplete="off"
-               value="01" placeholder="01" />
+        <div class="unit-row">
+          <input id="unit-input" type="text" inputmode="text" autocomplete="off"
+                 value="01" placeholder="01" />
+          <button type="button" class="btn btn--scan" id="scan-btn" aria-label="扫码填入编号">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5a2 2 0 0 1 2-2h3v2H5v3H3V5Zm13-2h3a2 2 0 0 1 2 2v3h-2V5h-3V3ZM3 16h2v3h3v2H5a2 2 0 0 1-2-2v-3Zm18 0v3a2 2 0 0 1-2 2h-3v-2h3v-3h2ZM7 7h4v4H7V7Zm6 0h4v4h-4V7Zm-6 6h4v4H7v-4Zm6 2h2v2h-2v-2Zm2-2h2v2h-2v-2Z"/></svg>
+            <span>扫码</span>
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="inspector-input">质检员姓名</label>
+        <input id="inspector-input" type="text" inputmode="text" autocomplete="off"
+               enterkeyhint="next" placeholder="例如：张三" />
       </div>
       <p class="folder-preview" id="folder-preview" aria-live="polite"></p>
     </section>
@@ -36,7 +47,7 @@
     <!-- Photo slots (injected by app.js from PARTS) -->
     <section class="group" data-group="external">
       <h2 class="group-title">
-        <span class="group-name">外部 5 面</span>
+        <span class="group-name">外部 6 面</span>
         <span class="group-count" data-group-count="external"></span>
       </h2>
       <div class="slot-grid" data-slot-grid="external"></div>
@@ -44,27 +55,54 @@
 
     <section class="group" data-group="internal">
       <h2 class="group-title">
-        <span class="group-name">内部 6 面</span>
+        <span class="group-name">内部 8 面</span>
         <span class="group-count" data-group-count="internal"></span>
       </h2>
       <div class="slot-grid" data-slot-grid="internal"></div>
     </section>
 
+    <!-- Function check: equipped & working accessories (injected by app.js) -->
+    <section class="group" data-group="features">
+      <h2 class="group-title">
+        <span class="group-name">功能检查</span>
+        <span class="group-count" data-feature-count></span>
+      </h2>
+      <div class="feature-list" data-feature-list></div>
+    </section>
+
+    <!-- Smart test report: per-item 合格/不合格/不适用 + power params + abnormal note -->
+    <section class="group" data-group="test">
+      <h2 class="group-title">
+        <span class="group-name">智能化测试报告</span>
+        <span class="group-count" data-test-count></span>
+      </h2>
+      <p class="group-sub">由质检员逐项判定，主管审核</p>
+      <div class="test-list" data-test-list></div>
+      <div class="field" style="margin-top:14px;">
+        <label for="test-abnormal">异常事项</label>
+        <textarea id="test-abnormal" class="test-abnormal" rows="2" placeholder="记录测试中发现的异常（选填）"></textarea>
+      </div>
+    </section>
+
     <!-- Extra files: PDF / Word / image attachments -->
     <section class="group" data-group="attach">
       <h2 class="group-title">
-        <span class="group-name">额外文件</span>
+        <span class="group-name">额外照片 / 文件</span>
         <span class="group-count" data-attach-count></span>
       </h2>
       <label class="attach-drop">
         <input class="attach-add-input visually-hidden" type="file" multiple
                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
-               aria-label="添加额外文件" />
+               aria-label="添加额外照片或文件" />
         <svg class="attach-drop__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4h2v4h10v-4h2ZM13 3v8.17l2.59-2.58L17 10l-5 5-5-5 1.41-1.41L11 11.17V3h2Z"/></svg>
-        <span class="attach-drop__text">点击上传 / 拖拽文件<small>支持 PDF、Word、图片，可多选</small></span>
+        <span class="attach-drop__text">点击拍照 / 上传，可多选<small>每张照片可在下方标注瑕疵信息，也支持 PDF、Word</small></span>
       </label>
       <div class="attach-list" data-attach-list></div>
     </section>
+
+    <!-- supervisor entry + author signature -->
+    <nav class="app-nav"><a href="supervisor.html">主管复检（导入 ZIP 复核 + 包装照片）→</a></nav>
+    <p class="app-signature">HLZ</p>
 
     <!-- keeps content clear of the sticky action bar -->
     <div class="action-bar-spacer" aria-hidden="true"></div>
@@ -74,7 +112,7 @@
   <div class="action-bar" id="action-bar">
     <div class="container action-bar__inner">
       <div class="action-bar__status">
-        <span class="count-pill">已选 <strong id="count-num">0</strong>/11<span id="count-defect"></span><span id="count-attach"></span></span>
+        <span class="count-pill">已选 <strong id="count-num">0</strong>/14<span id="count-defect"></span><span id="count-attach"></span></span>
         <button type="button" class="btn btn--ghost" id="history-btn" hidden>
           记录 <span id="history-count">0</span>
         </button>
@@ -113,10 +151,28 @@
     </div>
   </div>
 
+  <!-- QR scanner modal -->
+  <div class="scan-modal" id="scan-modal" hidden>
+    <div class="scan-modal__backdrop" data-close-scan></div>
+    <div class="scan-modal__panel" role="dialog" aria-modal="true" aria-label="扫码">
+      <div class="scan-modal__head">
+        <h2 class="scan-modal__title">对准标签二维码</h2>
+        <button type="button" class="modal__close" data-close-scan aria-label="关闭">✕</button>
+      </div>
+      <div class="scan-modal__viewport">
+        <video id="scan-video" playsinline muted></video>
+        <div class="scan-modal__frame" aria-hidden="true"></div>
+      </div>
+      <p class="scan-modal__hint" id="scan-hint">正在打开相机…</p>
+    </div>
+  </div>
+
   <!-- Lightweight toast -->
   <div class="toast" id="toast" hidden aria-live="polite"></div>
 
+  <script defer src="lib/jsqr.min.js"></script>
   <script defer src="lib/jszip.min.js"></script>
-  <script defer src="app.js"></script>
+  <script defer src="lib/aliyun-oss-sdk.min.js"></script>
+  <script defer src="boot.js?v=22"></script>
 </body>
 </html>
