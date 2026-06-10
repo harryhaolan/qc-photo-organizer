@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1d4ed8" />
+  <meta name="description" content="主管复检：导入质检员的照片 ZIP，逐台复核、补拍包装箱照片，生成复检报告。" />
+  <title>主管复检 | QC Photo Organizer</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --blue:#1d4ed8; --blue-d:#1e40af; --soft:#eff6ff; --line:#e5e7eb; --line-2:#cbd5e1;
+      --ink:#0f172a; --muted:#64748b; --bg:#f1f5f9; --surface:#fff;
+      --ok:#16a34a; --ok-bg:#dcfce7; --bad:#dc2626; --bad-bg:#fee2e2;
+    }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body { margin:0; font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+    header { background:var(--blue); color:#fff; padding:14px 18px; display:flex; align-items:center; gap:10px; position:sticky; top:0; z-index:10; }
+    header h1 { font-size:17px; margin:0; flex:1; }
+    header a { color:#fff; text-decoration:none; background:rgba(255,255,255,.18); padding:7px 12px; border-radius:8px; font-size:14px; }
+    header a:hover { background:rgba(255,255,255,.3); }
+    .wrap { max-width:760px; margin:0 auto; padding:18px 16px 60px; }
+
+    .drop { display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center;
+      border:2px dashed var(--line-2); border-radius:14px; padding:30px 18px; background:var(--surface); cursor:pointer; }
+    .drop:hover, .drop.over { border-color:var(--blue); background:var(--soft); }
+    .drop b { font-size:15px; }
+    .drop small { color:var(--muted); }
+    .drop svg { width:34px; height:34px; fill:var(--blue); opacity:.9; }
+    .hide { display:none !important; }
+
+    .sec-title { font-size:14px; font-weight:700; color:var(--muted); margin:22px 4px 10px; }
+
+    .unit { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:13px 14px; margin-bottom:10px;
+      display:flex; align-items:center; gap:12px; }
+    .unit__main { flex:1; min-width:0; }
+    .unit__name { font-weight:700; word-break:break-all; }
+    .unit__meta { font-size:13px; color:var(--muted); margin-top:2px; }
+    .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+    .pill.wait { background:#fef9c3; color:#854d0e; }
+    .pill.draft { background:#dbeafe; color:#1e40af; }
+    .pill.ok { background:var(--ok-bg); color:#166534; }
+    .pill.bad { background:var(--bad-bg); color:#991b1b; }
+    .unit__del { border:0; background:transparent; color:#94a3b8; cursor:pointer; font-size:18px; line-height:1; padding:6px; border-radius:8px; }
+    .unit__del:hover { background:#fee2e2; color:var(--bad); }
+    .btn { appearance:none; border:1.5px solid var(--blue); background:var(--surface); color:var(--blue);
+      border-radius:10px; padding:9px 16px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap; }
+    .btn:hover { background:var(--soft); }
+    .btn--solid { background:var(--blue); color:#fff; }
+    .btn--solid:hover { background:var(--blue-d); }
+    .btn--solid:disabled { background:#cbd5e1; border-color:#cbd5e1; cursor:not-allowed; }
+    .btn--ghost { border-color:var(--line-2); color:#475569; }
+    .btn--ghost:hover { background:#f8fafc; }
+    .btn--block { width:100%; padding:13px; font-size:15px; }
+
+    /* review */
+    .rv-head { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+    .rv-back { background:none; border:0; color:var(--blue); font-size:15px; cursor:pointer; padding:6px 2px; font-family:inherit; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:15px; margin-bottom:14px; }
+    .card h2 { font-size:15px; margin:0 0 12px; }
+    .info-row { font-size:14px; color:#334155; }
+    .info-row span { color:var(--muted); }
+
+    .gal-group + .gal-group { margin-top:16px; }
+    .gal-group__h { font-size:13px; font-weight:700; color:#334155; margin:0 2px 8px; padding-bottom:5px; border-bottom:1px solid var(--line); }
+    .gal-group__h span { color:var(--muted); font-weight:600; }
+    .gal { display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:8px; }
+    .gal__cell { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:#fafafa; }
+    .gal__cell img { width:100%; height:88px; object-fit:cover; display:block; cursor:zoom-in; }
+    .gal__cell .cap { padding:4px 6px; font-size:11px; color:var(--muted); word-break:break-all; line-height:1.25; }
+    .gal__cell--none { display:flex; align-items:center; justify-content:center; height:88px; font-size:11px; color:#94a3b8; text-align:center; padding:4px; }
+    .gal__badge { font-size:10px; font-weight:700; color:#fff; background:var(--bad); padding:1px 6px; border-radius:999px; }
+
+    .card-note { margin:0 0 12px; font-size:13px; color:var(--muted); }
+    .verdict { display:flex; gap:10px; }
+    .verdict button { flex:1; padding:12px; border-radius:10px; border:1.5px solid var(--line-2); background:var(--surface);
+      font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; color:#475569; }
+    .verdict button.on-ok { border-color:var(--ok); background:var(--ok-bg); color:#166534; }
+    .verdict button.on-bad { border-color:var(--bad); background:var(--bad-bg); color:#991b1b; }
+    .verdict button.locked { opacity:.5; cursor:not-allowed; }
+    .vhint { margin:9px 0 0; font-size:13px; }
+    .vhint.warn { color:#b45309; }
+    .vhint.ok { color:#166534; }
+
+    /* defect re-inspection */
+    .dfx { border:1px solid var(--line); border-radius:12px; padding:11px; margin-bottom:11px; }
+    .dfx.done { border-color:var(--ok); background:#f0fdf4; }
+    .dfx__top { display:flex; gap:11px; align-items:flex-start; }
+    .dfx__thumb { width:78px; height:78px; flex-shrink:0; border-radius:9px; overflow:hidden; background:#e2e8f0; }
+    .dfx__thumb img { width:100%; height:100%; object-fit:cover; display:block; cursor:zoom-in; }
+    .dfx__thumb--none { display:flex; align-items:center; justify-content:center; height:100%; font-size:10px; color:#94a3b8; }
+    .dfx__meta { flex:1; min-width:0; }
+    .dfx__label { font-weight:700; font-size:14px; word-break:break-all; }
+    .dfx__cap { font-size:11px; color:var(--muted); margin-top:1px; }
+    .dfx__status { display:inline-block; margin-top:6px; font-size:12px; font-weight:700; padding:1px 9px; border-radius:999px; }
+    .dfx__status.wait { background:#fef9c3; color:#854d0e; }
+    .dfx__status.done { background:var(--ok-bg); color:#166534; }
+    .dfx__after { display:flex; gap:10px; align-items:flex-start; margin-top:10px; }
+    .dfx__slot { position:relative; width:96px; height:96px; flex-shrink:0; }
+    .dfx__slot input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+    .dfx__slot-box { width:100%; height:100%; border:1.5px dashed var(--line-2); border-radius:10px; background:#f8fafc;
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; text-align:center; color:#475569; font-size:12px; font-weight:600; }
+    .dfx__slot-box img { width:100%; height:100%; object-fit:cover; border-radius:9px; }
+    .dfx__slot.has .dfx__slot-box { border-style:solid; border-color:var(--ok); }
+    .dfx__after-side { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
+    .dfx__note { width:100%; font:15px/1.4 inherit; font-family:inherit; padding:8px 10px; border:1.5px solid var(--line);
+      border-radius:9px; background:var(--surface); color:var(--ink); margin:0; min-height:0; }
+    .dfx__note:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--soft); }
+    .dfx__clear { align-self:flex-start; border:0; background:#fee2e2; color:var(--bad); border-radius:8px; padding:6px 11px;
+      font-size:13px; font-weight:600; cursor:pointer; }
+    textarea { width:100%; resize:vertical; min-height:60px; font:16px/1.4 inherit; font-family:inherit; padding:9px 11px;
+      border:1.5px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); margin-top:10px; }
+    textarea:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px var(--soft); }
+
+    .pack-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+    .pack { position:relative; }
+    .pack input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+    .pack__box { border:1.5px solid var(--line-2); border-radius:11px; aspect-ratio:1/1; overflow:hidden; background:#f8fafc;
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; text-align:center; }
+    .pack__box img { width:100%; height:100%; object-fit:cover; }
+    .pack__label { font-size:13px; font-weight:600; color:#475569; }
+    .pack__hint { font-size:11px; color:var(--muted); }
+    .pack__tag { position:absolute; top:6px; left:6px; background:var(--blue); color:#fff; font-size:12px; font-weight:700;
+      padding:1px 8px; border-radius:999px; }
+    .pack__clear { position:absolute; top:6px; right:6px; width:24px; height:24px; border-radius:50%; border:0;
+      background:rgba(15,23,42,.55); color:#fff; cursor:pointer; font-size:13px; display:none; align-items:center; justify-content:center; }
+    .pack.has .pack__clear { display:inline-flex; }
+    .pack.has .pack__box { border-style:solid; border-color:var(--blue); }
+
+    /* import summary (汇总：多少台机 / 多少个瑕疵) */
+    .summary { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 15px; margin-top:14px; }
+    .summary__stats { display:flex; gap:10px; flex-wrap:wrap; }
+    .summary__stat { flex:1; min-width:120px; background:var(--soft); border:1px solid #dbeafe; border-radius:10px; padding:11px 13px; }
+    .summary__stat.bad { background:var(--bad-bg); border-color:#fecaca; }
+    .summary__num { font-size:24px; font-weight:800; line-height:1.1; color:var(--blue); }
+    .summary__stat.bad .summary__num { color:var(--bad); }
+    .summary__lbl { font-size:12px; color:var(--muted); margin-top:3px; }
+    .summary__h { font-size:13px; font-weight:700; color:#334155; margin:14px 2px 8px; }
+    .summary__list { font-size:13px; }
+    .summary__row { display:flex; align-items:center; gap:10px; padding:7px 2px; border-top:1px solid var(--line); }
+    .summary__row-name { flex:1; min-width:0; word-break:break-all; color:#334155; }
+    .summary__row-name span { color:var(--muted); font-weight:400; }
+    .summary__row-count { font-weight:700; color:var(--bad); white-space:nowrap; }
+    .summary__row-count.zero { color:var(--ok); }
+
+    .empty { text-align:center; color:var(--muted); padding:26px 10px; }
+    .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#0f172a; color:#fff;
+      padding:11px 18px; border-radius:10px; font-size:14px; z-index:60; opacity:0; transition:opacity .2s; pointer-events:none; max-width:90vw; text-align:center; }
+    .toast.on { opacity:.96; }
+    /* lightbox */
+    .lb { position:fixed; inset:0; background:rgba(0,0,0,.85); display:none; align-items:center; justify-content:center; z-index:70; padding:16px; }
+    .lb.on { display:flex; }
+    .lb img { max-width:100%; max-height:100%; border-radius:8px; }
+    .overlay { position:fixed; inset:0; background:rgba(255,255,255,.6); display:none; align-items:center; justify-content:center; z-index:80; }
+    .overlay.on { display:flex; }
+    .spin { width:42px; height:42px; border-radius:50%; border:4px solid var(--soft); border-top-color:var(--blue); animation:sp .8s linear infinite; }
+    @keyframes sp { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>主管复检</h1>
+    <a href="index.html">← 质检拍照</a>
+  </header>
+
+  <main class="wrap" id="app">
+    <!-- ===== Upload / queue view ===== -->
+    <section id="view-upload">
+      <label class="drop" id="drop">
+        <input type="file" id="zip-input" accept=".zip,application/zip" multiple class="hide" />
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-4h2v4h10v-4h2ZM13 3v8.17l2.59-2.58L17 10l-5 5-5-5 1.41-1.41L11 11.17V3h2Z"/></svg>
+        <b>导入质检照片 ZIP</b>
+        <small>选择质检员生成的「型号-编号.zip」，可多选；逐台复核</small>
+      </label>
+
+      <div id="queue-wrap" class="hide">
+        <p class="sec-title">待复核（<span id="queue-count">0</span> 台）</p>
+        <div id="queue"></div>
+
+        <div id="queue-summary" class="summary"></div>
+      </div>
+    </section>
+
+    <!-- ===== Review view ===== -->
+    <section id="view-review" class="hide">
+      <div class="rv-head">
+        <button class="rv-back" id="rv-back">‹ 返回列表</button>
+      </div>
+
+      <div class="card">
+        <div class="info-row" id="rv-info"></div>
+      </div>
+
+      <div class="card">
+        <h2>原始质检照片 <span id="rv-photo-count" style="color:var(--muted);font-weight:400;"></span></h2>
+        <div class="gal" id="rv-gallery"></div>
+      </div>
+
+      <div class="card" id="rv-defect-card" hidden>
+        <h2>瑕疵复检 <span id="rv-defect-count" style="color:var(--muted);font-weight:400;"></span></h2>
+        <p class="card-note">每处瑕疵需上传「复检后照片」确认已修复，全部修复后方可判定合格。</p>
+        <div id="rv-defects"></div>
+      </div>
+
+      <div class="card">
+        <h2>主管复核结论</h2>
+        <div class="verdict" id="rv-verdict">
+          <button type="button" data-v="合格">✓ 合格</button>
+          <button type="button" data-v="不合格">✕ 不合格</button>
+        </div>
+        <p class="vhint" id="rv-verdict-hint"></p>
+        <textarea id="rv-note" placeholder="复核备注（选填，如：包装前已确认 / 发现问题…）"></textarea>
+      </div>
+
+      <div class="card">
+        <h2>包装箱照片 <span id="rv-pack-count" style="color:var(--muted);font-weight:400;"></span></h2>
+        <div class="pack-grid" id="rv-pack"></div>
+      </div>
+
+      <p class="card-note" id="rv-stage-note" style="margin:0 0 10px;">复检完成后可「临时保存（待终审）」交给最终主管；最终主管补拍包装箱后再「生成复检报告」。</p>
+      <button class="btn btn--ghost btn--block" id="rv-save-draft" style="margin-bottom:10px;">临时保存（待终审，交最终主管）</button>
+      <button class="btn btn--solid btn--block" id="rv-generate">终审完成 · 生成复检报告并下载</button>
+    </section>
+  </main>
+
+  <div class="lb" id="lb"><img id="lb-img" alt="放大预览" /></div>
+  <div class="overlay" id="overlay"><div class="spin"></div></div>
+  <div class="toast" id="toast"></div>
+
+  <script defer src="lib/jszip.min.js"></script>
+  <script defer src="supervisor.js?v=8"></script>
+</body>
+</html>
