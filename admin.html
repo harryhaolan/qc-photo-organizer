@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>产品质检拍照整理 · 汇总后台</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <style>
+    :root { --blue:#1d4ed8; --line:#e5e7eb; --ink:#111827; --muted:#6b7280; --bg:#f8fafc; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+    header { background:var(--blue); color:#fff; padding:16px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    header h1 { font-size:18px; margin:0; }
+    header .sp { flex:1; }
+    header button { background:rgba(255,255,255,.18); color:#fff; border:0; padding:7px 12px; border-radius:8px; cursor:pointer; font-size:14px; }
+    header button:hover { background:rgba(255,255,255,.3); }
+    .wrap { max-width:1100px; margin:0 auto; padding:20px; }
+    .setup { max-width:520px; margin:60px auto; background:#fff; border:1px solid var(--line); border-radius:14px; padding:28px; }
+    .setup h2 { margin:0 0 6px; }
+    .setup p { color:var(--muted); margin:0 0 18px; font-size:14px; }
+    .setup label { display:block; font-size:13px; color:var(--muted); margin:14px 0 5px; }
+    .setup input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:9px; font-size:14px; }
+    .setup .btn { margin-top:20px; width:100%; background:var(--blue); color:#fff; border:0; padding:12px; border-radius:10px; font-size:15px; cursor:pointer; }
+    .bar { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+    .bar input[type=search] { flex:1; min-width:180px; padding:9px 12px; border:1px solid var(--line); border-radius:9px; font-size:14px; }
+    .bar .stat { color:var(--muted); font-size:14px; }
+    table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+    th, td { text-align:left; padding:11px 12px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:top; }
+    th { background:#f1f5f9; color:var(--muted); font-weight:600; font-size:12.5px; }
+    tr:last-child td { border-bottom:0; }
+    .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; }
+    .pill.ok { background:#dcfce7; color:#166534; }
+    .pill.bad { background:#fee2e2; color:#991b1b; }
+    .act { display:inline-flex; gap:6px; }
+    .act button { border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer; white-space:nowrap; }
+    .act button:hover { border-color:var(--blue); color:var(--blue); }
+    .notes { color:var(--muted); font-size:12.5px; }
+    .empty, .err { text-align:center; color:var(--muted); padding:40px; }
+    .err { color:#b91c1c; }
+    /* preview modal */
+    .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; padding:20px; z-index:50; }
+    .modal.on { display:flex; }
+    .modal__box { background:#fff; border-radius:14px; max-width:1000px; width:100%; max-height:88vh; overflow:auto; }
+    .modal__head { position:sticky; top:0; background:#fff; display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); }
+    .modal__head h3 { margin:0; font-size:16px; flex:1; }
+    .modal__head button { border:0; background:#eef2ff; color:var(--blue); border-radius:8px; padding:7px 12px; cursor:pointer; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; padding:18px; }
+    .ph { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fafafa; }
+    .ph img { width:100%; height:130px; object-fit:cover; display:block; cursor:zoom-in; }
+    .ph .cap { padding:6px 8px; font-size:12px; color:var(--muted); word-break:break-all; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>产品质检拍照整理 · 汇总后台</h1>
+    <span class="sp"></span>
+    <button id="refresh-btn" hidden>刷新</button>
+    <button id="logout-btn" hidden>退出/换钥匙</button>
+  </header>
+
+  <div id="app" class="wrap"></div>
+
+  <div class="modal" id="modal">
+    <div class="modal__box">
+      <div class="modal__head">
+        <h3 id="modal-title">照片预览</h3>
+        <button id="modal-dl">下载整台 ZIP</button>
+        <button id="modal-close">关闭</button>
+      </div>
+      <div class="grid" id="modal-grid"></div>
+    </div>
+  </div>
+
+  <script defer src="lib/jszip.min.js"></script>
+  <script defer src="lib/aliyun-oss-sdk.min.js"></script>
+  <script defer src="admin.js?v=8"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 /*
  * QC Photo Organizer — client-only logic.
- * Users fill in a product model + unit number and attach up to 11 photos (one
+ * Users fill in a product model + unit number and attach up to 14 photos (one
  * per fixed surface). Each surface has a "has defect" checkbox; when checked, a
  * defect gallery appears where the inspector can add MULTIPLE defect photos, each
  * with its own note. A final "extra files" area accepts PDF / Word / image
@@ -12,24 +12,72 @@
 (function () {
   'use strict';
 
-  // ---- Static config: the 11 fixed surfaces, in display order ----
+  // ---- Static config: the 14 fixed surfaces, in display order ----
   const PARTS = [
-    { id: 'front',       label: '正面',        group: 'external' },
     { id: 'back',        label: '背面',        group: 'external' },
     { id: 'left_side',   label: '左侧板',      group: 'external' },
+    { id: 'front',       label: '正面',        group: 'external' },
     { id: 'right_side',  label: '右侧板',      group: 'external' },
     { id: 'top',         label: '顶板',        group: 'external' },
+    { id: 'glass',       label: '玻璃',        group: 'external' },
     { id: 'inner_left',  label: '内侧板（左）', group: 'internal' },
     { id: 'inner_right', label: '内侧板（右）', group: 'internal' },
     { id: 'inner_back',  label: '内背板',      group: 'internal' },
+    { id: 'inner_top',   label: '内顶板',      group: 'internal' },
     { id: 'seat',        label: '坐板',        group: 'internal' },
     { id: 'seat_front',  label: '坐前板',      group: 'internal' },
     { id: 'foot',        label: '脚板',        group: 'internal' },
+    { id: 'control_panel', label: '温度控制面板', group: 'internal' },
   ];
-  const TOTAL = PARTS.length; // 11
+  const TOTAL = PARTS.length; // 14
   const GROUP_FOLDER = { external: '外部', internal: '内部' };
   const DEFECT_FOLDER = '瑕疵';
   const ATTACH_FOLDER = '附件';
+  const DEFECT_CATS = ['毛刺', '裂痕', '钉子', '灰尘', '其他']; // quick-pick defect types
+  // 功能配置检查项(勾选=已配且正常),写入质检报告
+  const FEATURES = [
+    { id: 'bluetooth', label: '蓝牙音响' },
+    { id: 'led_ring', label: 'LED环形灯' },
+    { id: 'reading_light', label: '阅读灯' },
+  ];
+
+  // 智能化测试报告(质检员填测试结果,主管审核)。每项单项判定:合格/不合格/不适用。
+  // type:'param' 的项是工作电压/功率/电流的数值录入。
+  const TEST_GROUPS = [
+    { name: '外观', items: [
+      { id: 'ap1', text: '电器部件安装、布局合理，布线/走线整洁美观' },
+      { id: 'ap2', text: '显示屏显示符合说明书及文字要求，无破损/光斑/闪烁等不良' },
+      { id: 'ap3', text: '客户安装的控制线有清晰、牢固的标识线指导安装' },
+    ] },
+    { name: '功能', items: [
+      { id: 'fn1', text: '控制器功能按键及工作逻辑与说明书相对应' },
+      { id: 'fn2', text: 'RGB彩灯：正常开/关，颜色与说明书相对应' },
+      { id: 'fn3', text: '照明功能：正常开/关，灯光均匀、无色斑及闪烁' },
+      { id: 'fn12', text: '蓝牙功能：按说明书可正常配对并播放音乐' },
+    ] },
+    { name: '参数', items: [
+      { id: 'pm_power', text: '工作电压 / 功率 / 电流（实测）', type: 'param' },
+      { id: 'pm1', text: '测试总功率与产品设计功率相符' },
+      { id: 'pm2', text: '负载总功率与控制器最大载荷在合理范围内（<3.5KW）' },
+      { id: 'pm3', text: '输入电源线与负载功率符合配套规则要求' },
+    ] },
+    { name: '安全性能', items: [
+      { id: 'sf1', text: '1类电器，电气安全性能符合 GB 4706.31' },
+      { id: 'sf2', text: '加热元件人体易接触处装非金属护栏，栅栏间距≤50mm' },
+    ] },
+    { name: '发热温升', items: [
+      { id: 'ht1', text: '手摸或红外测温仪测试每块发热板正常发热' },
+      { id: 'ht2', text: '最大功率工作20min，控制器温度达到45℃' },
+      { id: 'ht3', text: '最大功率工作30min，控制器温度达到60℃' },
+    ] },
+    { name: '老化测试', items: [
+      { id: 'ag1', text: '通电待机老化≥8小时，再测相关功能正常' },
+    ] },
+    { name: '异味', items: [
+      { id: 'od1', text: '测试后无烧焦、刺鼻等异常气味' },
+    ] },
+  ];
+  const TEST_VERDICTS = ['合格', '不合格', '不适用'];
   const GROUP_TOTALS = PARTS.reduce(function (acc, p) {
     acc[p.group] = (acc[p.group] || 0) + 1;
     return acc;
@@ -46,7 +94,10 @@
   const state = {
     model: '',
     unit: '01',
+    inspector: '',
     slots: {},
+    features: {},
+    test: { params: { v: '', w: '', a: '' }, abnormal: '' },
     attachments: [],
     status: 'idle',   // 'idle' | 'generating' | 'ready'
     history: [],      // newest first; see recordHistory()
@@ -56,12 +107,19 @@
   PARTS.forEach(function (p) {
     state.slots[p.id] = { file: null, previewUrl: null, ext: '', hasDefect: false, defects: [] };
   });
+  FEATURES.forEach(function (f) { state.features[f.id] = false; });
+  TEST_GROUPS.forEach(function (g) { g.items.forEach(function (it) { if (it.type !== 'param') state.test[it.id] = ''; }); });
 
   // ---- DOM refs (script is deferred, so the DOM is ready) ----
   const els = {
     main: document.getElementById('main'),
     modelInput: document.getElementById('model-input'),
     unitInput: document.getElementById('unit-input'),
+    inspectorInput: document.getElementById('inspector-input'),
+    scanBtn: document.getElementById('scan-btn'),
+    scanModal: document.getElementById('scan-modal'),
+    scanVideo: document.getElementById('scan-video'),
+    scanHint: document.getElementById('scan-hint'),
     folderPreview: document.getElementById('folder-preview'),
     countNum: document.getElementById('count-num'),
     countDefect: document.getElementById('count-defect'),
@@ -257,7 +315,7 @@
           '<button class="slot__remove" type="button" aria-label="移除' + l + '的照片" hidden>✕</button>' +
         '</div>' +
         '<label class="slot__drop">' +
-          '<input class="slot__input visually-hidden" type="file" accept="image/*" capture="environment" aria-label="' + l + ' 照片" />' +
+          '<input class="slot__input visually-hidden" type="file" accept="image/*" aria-label="' + l + ' 照片" />' +
           '<div class="slot__placeholder">' +
             '<svg class="slot__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.2 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.2L15 3H9Zm3 5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>' +
             '<span class="slot__hint-text">点击拍照 / 选择照片</span>' +
@@ -276,7 +334,7 @@
         '<div class="slot__defects" hidden>' +
           '<div class="slot__defects-list"></div>' +
           '<label class="defect-add">' +
-            '<input class="defect-add-input visually-hidden" type="file" accept="image/*" capture="environment" multiple aria-label="添加' + l + '瑕疵照片" />' +
+            '<input class="defect-add-input visually-hidden" type="file" accept="image/*" multiple aria-label="添加' + l + '瑕疵照片" />' +
             '<span class="defect-add__btn">+ 添加瑕疵照片</span>' +
           '</label>' +
         '</div>' +
@@ -333,6 +391,10 @@
       thumb = '<div class="defect-item__thumb defect-item__thumb--none">' +
         '<span>无法预览</span><small>' + escapeHtml(entry.file ? entry.file.name : '') + '</small></div>';
     }
+    var chips = DEFECT_CATS.map(function (c) {
+      var on = entry.category === c ? ' is-on' : '';
+      return '<button type="button" class="defect-cat' + on + '" data-cat="' + escapeHtml(c) + '">' + escapeHtml(c) + '</button>';
+    }).join('');
     return '' +
       '<div class="defect-item" data-defect-uid="' + entry.uid + '">' +
         thumb +
@@ -341,7 +403,8 @@
             '<span class="defect-item__tag">瑕疵' + index + '</span>' +
             '<button class="defect-item__remove" type="button" aria-label="移除瑕疵' + index + '">✕</button>' +
           '</div>' +
-          '<textarea class="defect-item__note" rows="2" placeholder="请描述该瑕疵（方便溯源）" aria-label="瑕疵' + index + '备注">' +
+          '<div class="defect-item__cats" role="group" aria-label="瑕疵' + index + '类型">' + chips + '</div>' +
+          '<textarea class="defect-item__note" rows="2" placeholder="补充描述（选「其他」时请填写）" aria-label="瑕疵' + index + '备注">' +
             escapeHtml(entry.note || '') +
           '</textarea>' +
         '</div>' +
@@ -366,6 +429,7 @@
       slot.defects.push({
         uid: nextUid(),
         file: f,
+        category: '',
         note: '',
         previewUrl: isRenderable(f) ? URL.createObjectURL(f) : null,
         ext: fileExt(f),
@@ -375,6 +439,34 @@
     updateCounts();
     markDirty();
     updateActionBar();
+  }
+
+  // Combine a defect's quick-pick type + free note into one string for export
+  // (CSV / cloud). "毛刺：左下角" / "其他：掉漆" / "毛刺" / "左下角".
+  function defectNoteText(d) {
+    var cat = (d.category || '').trim();
+    var note = (d.note || '').trim();
+    if (cat && note) return cat + '：' + note;
+    return cat || note;
+  }
+
+  // Toggle a defect's quick-pick type (tap again to clear). Updates state + the
+  // pressed chip styling in place, without rebuilding the list.
+  function setDefectCategory(id, uid, cat, item) {
+    var defects = state.slots[id].defects;
+    var next = '';
+    for (var i = 0; i < defects.length; i++) {
+      if (defects[i].uid === uid) {
+        next = defects[i].category === cat ? '' : cat;
+        defects[i].category = next;
+        break;
+      }
+    }
+    var chips = item.querySelectorAll('.defect-cat');
+    for (var j = 0; j < chips.length; j++) {
+      chips[j].classList.toggle('is-on', chips[j].dataset.cat === next && next !== '');
+    }
+    markDirty();
   }
 
   function removeDefect(id, uid) {
@@ -396,14 +488,31 @@
 
   function attachItemMarkup(a) {
     var ext = (a.ext || extFromName(a.file.name) || '').toUpperCase();
-    var badge = ext ? '<span class="attach-item__ext">' + escapeHtml(ext) + '</span>' : '';
+    var thumb;
+    if (a.previewUrl) {
+      thumb = '<div class="attach-item__thumb"><img alt="' + escapeHtml(a.file.name) + ' 预览" src="' + a.previewUrl + '" /></div>';
+    } else {
+      var badge = ext ? '<span class="attach-item__ext">' + escapeHtml(ext) + '</span>' : '';
+      thumb = '<div class="attach-item__thumb attach-item__thumb--file">' +
+        '<svg class="attach-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6Zm7 1.5L18.5 9H13V3.5Z"/></svg>' +
+        badge + '</div>';
+    }
     return '' +
       '<div class="attach-item" data-attach-uid="' + a.uid + '">' +
-        '<svg class="attach-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6Zm7 1.5L18.5 9H13V3.5Z"/></svg>' +
-        '<span class="attach-item__name">' + escapeHtml(a.file.name) + '</span>' +
-        badge +
-        '<span class="attach-item__size">' + formatSize(a.file.size) + '</span>' +
-        '<button class="attach-item__remove" type="button" aria-label="移除该文件">✕</button>' +
+        thumb +
+        '<div class="attach-item__body">' +
+          '<div class="attach-item__head">' +
+            '<span class="attach-item__name">' + escapeHtml(a.file.name) + '</span>' +
+            '<span class="attach-item__size">' + formatSize(a.file.size) + '</span>' +
+            '<button class="attach-item__remove" type="button" aria-label="移除该文件">✕</button>' +
+          '</div>' +
+          '<input class="attach-item__loc" type="text" inputmode="text" autocomplete="off" ' +
+            'placeholder="位置（如：左侧板螺丝处）" aria-label="' + escapeHtml(a.file.name) + ' 位置" ' +
+            'value="' + escapeHtml(a.location || '') + '" />' +
+          '<textarea class="attach-item__note" rows="2" placeholder="可标注瑕疵信息（方便溯源，选填）" aria-label="' + escapeHtml(a.file.name) + ' 备注">' +
+            escapeHtml(a.note || '') +
+          '</textarea>' +
+        '</div>' +
       '</div>';
   }
 
@@ -412,9 +521,96 @@
     els.attachCount.textContent = state.attachments.length ? state.attachments.length + ' 个' : '';
   }
 
+  // ===================== Function check (功能检查) =====================
+
+  function renderFeatures() {
+    var list = document.querySelector('[data-feature-list]');
+    if (!list) return;
+    list.innerHTML = FEATURES.map(function (f) {
+      var on = !!state.features[f.id];
+      return '<label class="feature-item' + (on ? ' is-on' : '') + '">' +
+        '<input class="feature-check" type="checkbox" data-feature="' + f.id + '"' + (on ? ' checked' : '') + ' />' +
+        '<span class="feature-item__box" aria-hidden="true"></span>' +
+        '<span class="feature-item__label">' + escapeHtml(f.label) + '</span>' +
+      '</label>';
+    }).join('');
+    updateFeatureCount();
+  }
+
+  function updateFeatureCount() {
+    var n = FEATURES.filter(function (f) { return state.features[f.id]; }).length;
+    var el = document.querySelector('[data-feature-count]');
+    if (el) el.textContent = n + '/' + FEATURES.length;
+  }
+
+  // ===================== Smart test report (智能化测试报告) =====================
+
+  function testVerdictClass(v) {
+    return v === '合格' ? 'ok' : (v === '不合格' ? 'bad' : 'na');
+  }
+
+  function renderTestReport() {
+    var list = document.querySelector('[data-test-list]');
+    if (!list) return;
+    list.innerHTML = TEST_GROUPS.map(function (g) {
+      var rows = g.items.map(function (it) {
+        if (it.type === 'param') {
+          var p = state.test.params || {};
+          return '<div class="test-item test-item--param">' +
+            '<div class="test-item__text">' + escapeHtml(it.text) + '</div>' +
+            '<div class="test-param">' +
+              '<label>电压<input type="number" inputmode="decimal" data-param="v" value="' + escapeHtml(p.v || '') + '" /><i>V</i></label>' +
+              '<label>功率<input type="number" inputmode="decimal" data-param="w" value="' + escapeHtml(p.w || '') + '" /><i>W</i></label>' +
+              '<label>电流<input type="number" inputmode="decimal" data-param="a" value="' + escapeHtml(p.a || '') + '" /><i>A</i></label>' +
+            '</div>' +
+          '</div>';
+        }
+        var v = state.test[it.id] || '';
+        var btns = TEST_VERDICTS.map(function (val) {
+          return '<button type="button" class="test-v test-v--' + testVerdictClass(val) + (v === val ? ' is-on' : '') +
+            '" data-test="' + it.id + '" data-val="' + val + '">' + escapeHtml(val) + '</button>';
+        }).join('');
+        return '<div class="test-item">' +
+          '<div class="test-item__text">' + escapeHtml(it.text) + '</div>' +
+          '<div class="test-verdict">' + btns + '</div>' +
+        '</div>';
+      }).join('');
+      return '<div class="test-group"><div class="test-group__h">' + escapeHtml(g.name) + '</div>' + rows + '</div>';
+    }).join('');
+    updateTestCount();
+  }
+
+  function updateTestCount() {
+    var total = 0, done = 0;
+    TEST_GROUPS.forEach(function (g) {
+      g.items.forEach(function (it) {
+        if (it.type === 'param') return;
+        total++;
+        if (state.test[it.id]) done++;
+      });
+    });
+    var el = document.querySelector('[data-test-count]');
+    if (el) el.textContent = done + '/' + total;
+  }
+
+  function resetTest() {
+    state.test = { params: { v: '', w: '', a: '' }, abnormal: '' };
+    TEST_GROUPS.forEach(function (g) { g.items.forEach(function (it) { if (it.type !== 'param') state.test[it.id] = ''; }); });
+    var ab = document.getElementById('test-abnormal');
+    if (ab) ab.value = '';
+  }
+
   function addAttachments(files) {
     for (var i = 0; i < files.length; i++) {
-      state.attachments.push({ uid: nextUid(), file: files[i], ext: fileExt(files[i]) });
+      var f = files[i];
+      state.attachments.push({
+        uid: nextUid(),
+        file: f,
+        ext: fileExt(f),
+        location: '',
+        note: '',
+        previewUrl: isRenderable(f) ? URL.createObjectURL(f) : null,
+      });
     }
     renderAttachments();
     updateCounts();
@@ -424,7 +620,11 @@
 
   function removeAttachment(uid) {
     for (var i = 0; i < state.attachments.length; i++) {
-      if (state.attachments[i].uid === uid) { state.attachments.splice(i, 1); break; }
+      if (state.attachments[i].uid === uid) {
+        if (state.attachments[i].previewUrl) URL.revokeObjectURL(state.attachments[i].previewUrl);
+        state.attachments.splice(i, 1);
+        break;
+      }
     }
     renderAttachments();
     updateCounts();
@@ -562,16 +762,42 @@
 
   // ===================== ZIP + CSV =====================
 
-  function buildCsv(model, unit, partCount, defectPhotoCount, defectSurfaceCount, attachCount, rows) {
+  // Flatten the smart-test-report state into CSV lines (its own section).
+  function testReportLines(test) {
+    var L = [];
+    L.push('');
+    L.push('===== 智能化测试报告 =====');
+    L.push('类别,测试项目,单项判定');
+    TEST_GROUPS.forEach(function (g) {
+      g.items.forEach(function (it) {
+        if (it.type === 'param') {
+          var p = (test && test.params) || {};
+          L.push(csvEscape(g.name) + ',工作电压(V),' + csvEscape(p.v || ''));
+          L.push(csvEscape(g.name) + ',工作功率(W),' + csvEscape(p.w || ''));
+          L.push(csvEscape(g.name) + ',工作电流(A),' + csvEscape(p.a || ''));
+        } else {
+          L.push(csvEscape(g.name) + ',' + csvEscape(it.text) + ',' + csvEscape((test && test[it.id]) || '未判定'));
+        }
+      });
+    });
+    L.push('异常事项,,' + csvEscape((test && (test.abnormal || '').trim()) || ''));
+    return L;
+  }
+
+  function buildCsv(model, unit, inspector, partCount, defectPhotoCount, defectSurfaceCount, attachCount, features, test, rows) {
     var BOM = '\uFEFF'; // makes Excel/WPS read the file as UTF-8 (avoids garbled Chinese)
     var CRLF = '\r\n';
     var L = [];
     L.push('型号,' + csvEscape(model));
     L.push('编号,' + csvEscape(unit));
+    L.push('质检员,' + csvEscape(inspector || ''));
     L.push('生成时间,' + csvEscape(formatNow()));
     L.push('部位照片,' + partCount + '/' + TOTAL);
     L.push('瑕疵照片,' + defectPhotoCount + ' 张（' + defectSurfaceCount + ' 个部位）');
     L.push('附件,' + attachCount + ' 个');
+    FEATURES.forEach(function (f) {
+      L.push(csvEscape(f.label) + ',' + ((features && features[f.id]) ? '是' : '否'));
+    });
     L.push('');
     L.push('类别,部位,类型,文件名,瑕疵备注');
     rows.forEach(function (r) {
@@ -580,6 +806,7 @@
         csvEscape(r.path), csvEscape(r.note),
       ].join(','));
     });
+    testReportLines(test).forEach(function (ln) { L.push(ln); });
     return BOM + L.join(CRLF) + CRLF;
   }
 
@@ -587,7 +814,7 @@
   // and re-download). Overview photos go into 外部/内部; defect photos into
   // 瑕疵/外部 or 瑕疵/内部 (named ...-瑕疵N); attachments into 附件. STORE (no
   // deflate) keeps it fast on phones; sub-folders are created lazily.
-  function buildZipBlob(model, unit, slots, attachments) {
+  function buildZipBlob(model, unit, inspector, slots, attachments, features, test) {
     var folderBase = sanitizeFilename(model) + '-' + sanitizeFilename(unit);
     var zip = new JSZip();
     var root = zip.folder(folderBase);
@@ -625,10 +852,11 @@
       defects.forEach(function (d, i) {
         if (!d.file) return;
         var dext = d.ext || extFromMime(d.file.type) || 'bin';
-        var dname = folderBase + '-' + sanitizeFilename(part.label) + '-瑕疵' + (i + 1) + '.' + dext;
+        var catTag = (d.category || '').trim() ? '-' + sanitizeFilename(d.category) : '';
+        var dname = folderBase + '-' + sanitizeFilename(part.label) + '-瑕疵' + (i + 1) + catTag + '.' + dext;
         var dpath = addTo(DEFECT_FOLDER + '/' + groupDir, dname, d.file);
         defectPhotoCount++;
-        rows.push({ category: groupDir, label: part.label, type: '瑕疵', path: dpath, note: (d.note || '').trim() });
+        rows.push({ category: groupDir, label: part.label, type: '瑕疵', path: dpath, note: defectNoteText(d) });
       });
     });
 
@@ -637,10 +865,10 @@
       if (!a.file) return;
       var apath = addTo(ATTACH_FOLDER, sanitizeAttachmentName(a.file.name), a.file);
       attachCount++;
-      rows.push({ category: ATTACH_FOLDER, label: '', type: '附件', path: apath, note: '' });
+      rows.push({ category: ATTACH_FOLDER, label: (a.location || '').trim(), type: '附件', path: apath, note: (a.note || '').trim() });
     });
 
-    root.file('质检备注.csv', buildCsv(model, unit, partCount, defectPhotoCount, defectSurfaceCount, attachCount, rows));
+    root.file('质检备注.csv', buildCsv(model, unit, inspector, partCount, defectPhotoCount, defectSurfaceCount, attachCount, features, test, rows));
 
     return zip.generateAsync({ type: 'blob', compression: 'STORE' }).then(function (blob) {
       return {
@@ -678,15 +906,19 @@
     var unit = effectiveUnit();
     state.unit = unit;
     els.unitInput.value = unit; // reflect the normalised value (e.g. blank -> 01)
+    var inspector = (state.inspector || '').trim();
 
     setStatus('generating');
     showOverlay('spinner', '正在生成…');
 
-    buildZipBlob(model, unit, state.slots, state.attachments).then(function (res) {
+    var features = Object.assign({}, state.features);
+    var test = JSON.parse(JSON.stringify(state.test));
+    buildZipBlob(model, unit, inspector, state.slots, state.attachments, features, test).then(function (res) {
       state.lastBlob = res.blob;
       state.lastFolder = res.folderBase;
       triggerDownload(res.blob, res.folderBase + '.zip');
-      recordHistory(res, model, unit);
+      recordHistory(res, model, unit, inspector, features, test);
+      uploadToCloud(res, model, unit, inspector);
       var extra = res.defectCount > 0 ? '（瑕疵 ' + res.defectCount + ' 张）' : '';
       showOverlay('check', '已生成 ' + res.folderBase + '.zip · 共 ' + res.count + ' 张' + extra);
       setStatus('ready');
@@ -699,18 +931,19 @@
     });
   }
 
-  function recordHistory(res, model, unit) {
+  function recordHistory(res, model, unit, inspector, features, test) {
     var snap = {};
     PARTS.forEach(function (p) {
       var s = state.slots[p.id];
-      var defectsSnap = s.defects.map(function (d) { return { file: d.file, note: d.note, ext: d.ext }; });
+      var defectsSnap = s.defects.map(function (d) { return { file: d.file, category: d.category, note: d.note, ext: d.ext }; });
       snap[p.id] = { file: s.file, ext: s.ext, hasDefect: s.hasDefect, defects: defectsSnap };
     });
-    var attachSnap = state.attachments.map(function (a) { return { file: a.file, ext: a.ext }; });
+    var attachSnap = state.attachments.map(function (a) { return { file: a.file, ext: a.ext, location: a.location, note: a.note }; });
     state.history.unshift({
       folderName: res.folderBase,
       model: model,
       unit: unit,
+      inspector: inspector || '',
       timestamp: formatNow(),
       photoCount: res.count,
       defectCount: res.defectCount,
@@ -718,8 +951,51 @@
       attachCount: res.attachCount,
       slots: snap,
       attachments: attachSnap,
+      features: features || Object.assign({}, state.features),
+      test: test || JSON.parse(JSON.stringify(state.test)),
     });
     updateActionBar();
+  }
+
+  // Flatten this unit's defect notes for the cloud record (so the admin view can
+  // read defect descriptions without unzipping).
+  function collectDefectNotes() {
+    var notes = [];
+    PARTS.forEach(function (part) {
+      var slot = state.slots[part.id] || {};
+      (slot.defects || []).forEach(function (d, i) {
+        notes.push({ part: part.label, index: i + 1, category: (d.category || '').trim(), note: defectNoteText(d) });
+      });
+    });
+    return notes;
+  }
+
+  // Best-effort upload to the central cloud. Never blocks the local ZIP download;
+  // failures just show a toast (the inspector still has the ZIP on the device).
+  function uploadToCloud(res, model, unit, inspector) {
+    if (!window.QCStorage || !QCStorage.configured()) return;
+    showToast('正在上传云端…');
+    var t0 = Date.now();
+    QCStorage.upload({
+      blob: res.blob,
+      folder: res.folderBase,
+      model: model,
+      unit: unit,
+      inspector: inspector || '',
+      photoCount: res.count,
+      defectCount: res.defectCount,
+      defectSurfaceCount: res.defectSurfaceCount,
+      attachCount: res.attachCount,
+      notes: collectDefectNotes(),
+    }).then(function () {
+      // 临时诊断:成功也弹窗,确保看得见结果。定位后改回轻提示。
+      window.alert('✅ 已上传到云端汇总\n\n耗时约 ' + Math.round((Date.now() - t0) / 1000) + ' 秒');
+    }).catch(function (err) {
+      console.error(err);
+      // 临时诊断:用 alert 弹出确切错误,方便截图反馈。问题定位后会改回轻提示。
+      window.alert('❌ 云端上传失败（本地 ZIP 已保存）。\n\n错误信息：\n' + (err && err.message ? err.message : err) +
+                   '\n\n耗时约 ' + Math.round((Date.now() - t0) / 1000) + ' 秒');
+    });
   }
 
   function nextUnit() {
@@ -729,7 +1005,10 @@
       s.defects.forEach(function (d) { if (d.previewUrl) URL.revokeObjectURL(d.previewUrl); });
       s.file = null; s.ext = ''; s.hasDefect = false; s.defects = [];
     });
+    state.attachments.forEach(function (a) { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
     state.attachments = [];
+    FEATURES.forEach(function (f) { state.features[f.id] = false; });
+    resetTest();
     state.unit = incrementUnit(effectiveUnit());
     els.unitInput.value = state.unit;
     state.lastBlob = null;
@@ -737,6 +1016,8 @@
 
     renderSlots();        // fresh DOM: empty slots, unchecked defects, no galleries
     renderAttachments();  // clears the extra-files list
+    renderFeatures();     // resets the function-check boxes
+    renderTestReport();   // resets the smart-test-report checklist
     updateCounts();
     updateFolderPreview();
     setStatus('idle');
@@ -818,11 +1099,14 @@
       var defectHtml = '';
       if (defects.length) {
         defectHtml = '<div class="hist-defect-grid">' + defects.map(function (d, i) {
+          var cat = (d.category || '').trim();
           var note = (d.note || '').trim();
+          var catHtml = cat ? '<span class="hist-defect-cat">' + escapeHtml(cat) + '</span>' : '';
           return '<div class="hist-defect-cell">' +
             detailThumb(d.file, p.label + ' 瑕疵' + (i + 1)) +
+            catHtml +
             '<div class="hist-defect-note' + (note ? '' : ' is-empty') + '">' +
-              (note ? escapeHtml(note) : '（未填写备注）') +
+              (note ? escapeHtml(note) : (cat ? '' : '（未填写备注）')) +
             '</div>' +
           '</div>';
         }).join('') + '</div>';
@@ -842,9 +1126,26 @@
       attachHtml = '<div class="hist-attach">' +
         '<div class="hist-attach__title">附件 ' + h.attachments.length + ' 个</div>' +
         h.attachments.map(function (a) {
-          return '<div class="hist-attach__item">' + escapeHtml(a.file ? a.file.name : '') + '</div>';
+          var loc = (a.location || '').trim();
+          var note = (a.note || '').trim();
+          var locHtml = loc ? '<div class="hist-attach__loc">位置：' + escapeHtml(loc) + '</div>' : '';
+          var noteHtml = note ? '<div class="hist-attach__note">' + escapeHtml(note) + '</div>' : '';
+          return '<div class="hist-attach__item">' +
+            '<span class="hist-attach__name">' + escapeHtml(a.file ? a.file.name : '') + '</span>' +
+            locHtml +
+            noteHtml +
+          '</div>';
         }).join('') +
       '</div>';
+    }
+
+    var featHtml = '';
+    if (h.features) {
+      featHtml = '<div class="hist-features">' + FEATURES.map(function (f) {
+        var on = !!h.features[f.id];
+        return '<span class="hist-feature' + (on ? ' is-on' : '') + '">' +
+          (on ? '✓ ' : '✕ ') + escapeHtml(f.label) + '</span>';
+      }).join('') + '</div>';
     }
 
     var metaBits = [h.photoCount + ' 张照片'];
@@ -855,6 +1156,7 @@
         '<span>' + metaBits.join(' · ') + ' · ' + escapeHtml(h.timestamp) + '</span>' +
         '<button class="btn btn--secondary" type="button" data-hist-dl="' + index + '">重新下载</button>' +
       '</div>' +
+      featHtml +
       '<div class="hist-detail-grid">' + cards + '</div>' +
       attachHtml;
   }
@@ -863,12 +1165,118 @@
     var h = state.history[index];
     if (!h) return;
     showToast('正在打包…');
-    buildZipBlob(h.model, h.unit, h.slots, h.attachments).then(function (res) {
+    buildZipBlob(h.model, h.unit, h.inspector, h.slots, h.attachments, h.features, h.test).then(function (res) {
       triggerDownload(res.blob, res.folderBase + '.zip');
     }).catch(function (err) {
       console.error(err);
       showToast('打包失败，请重试');
     });
+  }
+
+  // ===================== QR scan (replaces manual 编号) =====================
+  // Labels read like "CGB2604002;1;2" — a code prefix, then batch, then unit.
+  // We parse the last two ;-separated fields as 批次/台号 → 编号 "1-2", and use
+  // the prefix as the 型号 when it's still blank. Separators are normalised so
+  // full-width "；"、commas or spaces from odd encoders still parse.
+  function parseScanCode(raw) {
+    var text = String(raw == null ? '' : raw).trim();
+    if (!text) return null;
+    var norm = text.replace(/[；;，,\s]+/g, ';').replace(/^;+|;+$/g, '');
+    var parts = norm.split(';');
+    if (parts.length >= 3) {
+      var unit = parts[parts.length - 1];
+      var batch = parts[parts.length - 2];
+      var prefix = parts.slice(0, parts.length - 2).join(';');
+      return { raw: text, prefix: prefix, batch: batch, num: unit, unit: batch + '-' + unit, ok: true };
+    }
+    // Not enough fields to split — use the whole code as 编号, leave 型号 alone.
+    return { raw: text, prefix: '', batch: '', num: text, unit: text, ok: false };
+  }
+
+  function applyScan(parsed) {
+    if (!parsed) return;
+    state.unit = parsed.unit;
+    els.unitInput.value = parsed.unit;
+
+    var filledModel = false;
+    if (parsed.prefix && !state.model.trim()) {
+      state.model = parsed.prefix;
+      els.modelInput.value = parsed.prefix;
+      filledModel = true;
+    }
+    updateFolderPreview();
+    markDirty();
+    updateActionBar();
+
+    var msg;
+    if (parsed.ok && /^\d+$/.test(parsed.batch)) {
+      msg = '已扫码:第' + parsed.batch + '批 第' + parsed.num + '台';
+    } else {
+      msg = '已扫码:' + parsed.unit;
+    }
+    if (filledModel) msg += '（型号 ' + parsed.prefix + '）';
+    showToast(msg);
+  }
+
+  var scanStream = null;
+  var scanRAF = null;
+  var scanCanvas = null;
+
+  function stopScan() {
+    if (scanRAF) { cancelAnimationFrame(scanRAF); scanRAF = null; }
+    if (scanStream) { scanStream.getTracks().forEach(function (t) { t.stop(); }); scanStream = null; }
+    if (els.scanVideo) els.scanVideo.srcObject = null;
+    els.scanModal.hidden = true;
+    document.body.classList.remove('modal-open');
+  }
+
+  function openScan() {
+    if (typeof jsQR === 'undefined') { showToast('扫码组件未加载，请刷新页面'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast('当前浏览器不支持调用相机'); return;
+    }
+    els.scanModal.hidden = false;
+    document.body.classList.add('modal-open');
+    els.scanHint.textContent = '正在打开相机…';
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
+      .then(function (stream) {
+        scanStream = stream;
+        els.scanVideo.srcObject = stream;
+        return els.scanVideo.play();
+      })
+      .then(function () {
+        els.scanHint.textContent = '把二维码放进框内';
+        scanRAF = requestAnimationFrame(scanLoop);
+      })
+      .catch(function (err) {
+        console.error(err);
+        var denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+        var msg = denied ? '相机权限被拒绝，请在浏览器设置中允许后重试' : '无法打开相机';
+        els.scanHint.textContent = msg;
+        showToast(msg);
+        setTimeout(stopScan, 1600);
+      });
+  }
+
+  function scanLoop() {
+    var video = els.scanVideo;
+    if (!scanStream) return;
+    if (video.readyState >= video.HAVE_ENOUGH_DATA && video.videoWidth) {
+      if (!scanCanvas) scanCanvas = document.createElement('canvas');
+      var w = video.videoWidth, h = video.videoHeight;
+      scanCanvas.width = w; scanCanvas.height = h;
+      var ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, w, h);
+      var img = ctx.getImageData(0, 0, w, h);
+      var code = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+      if (code && code.data) {
+        var parsed = parseScanCode(code.data);
+        stopScan();
+        applyScan(parsed);
+        return;
+      }
+    }
+    scanRAF = requestAnimationFrame(scanLoop);
   }
 
   // ===================== Event wiring =====================
@@ -886,6 +1294,15 @@
       updateFolderPreview();
       markDirty();
       updateActionBar();
+    });
+    els.inspectorInput.addEventListener('input', function () {
+      state.inspector = els.inspectorInput.value;
+    });
+
+    // QR scan → fills 编号 (and 型号 when blank)
+    els.scanBtn.addEventListener('click', openScan);
+    els.scanModal.addEventListener('click', function (e) {
+      if (e.target.closest('[data-close-scan]')) stopScan();
     });
 
     // File selection + defect checkbox (delegated change)
@@ -914,11 +1331,48 @@
       var chk = e.target.closest('.slot__defect-check');
       if (chk) {
         setDefect(chk.closest('.slot').dataset.partId, chk.checked);
+        return;
+      }
+      var feat = e.target.closest('.feature-check');
+      if (feat) {
+        state.features[feat.dataset.feature] = feat.checked;
+        var fitem = feat.closest('.feature-item');
+        if (fitem) fitem.classList.toggle('is-on', feat.checked);
+        updateFeatureCount();
+        markDirty();
       }
     });
 
-    // Defect notes (delegated input)
+    // Defect notes + attachment notes + test report fields (delegated input)
     els.main.addEventListener('input', function (e) {
+      var pin = e.target.closest('.test-param input');
+      if (pin) {
+        if (!state.test.params) state.test.params = { v: '', w: '', a: '' };
+        state.test.params[pin.dataset.param] = pin.value;
+        markDirty();
+        return;
+      }
+      if (e.target.id === 'test-abnormal') {
+        state.test.abnormal = e.target.value;
+        markDirty();
+        return;
+      }
+      var attachField = e.target.closest('.attach-item__note, .attach-item__loc');
+      if (attachField) {
+        var aItem = attachField.closest('.attach-item');
+        if (!aItem) return;
+        var aUid = aItem.dataset.attachUid;
+        var isLoc = attachField.classList.contains('attach-item__loc');
+        for (var j = 0; j < state.attachments.length; j++) {
+          if (state.attachments[j].uid === aUid) {
+            if (isLoc) state.attachments[j].location = attachField.value;
+            else state.attachments[j].note = attachField.value;
+            break;
+          }
+        }
+        markDirty();
+        return;
+      }
       var ta = e.target.closest('.defect-item__note');
       if (!ta) return;
       var card = ta.closest('.slot');
@@ -934,6 +1388,25 @@
 
     // Remove buttons: overview photo, defect photo, attachment (delegated click)
     els.main.addEventListener('click', function (e) {
+      var tv = e.target.closest('.test-v');
+      if (tv) {
+        var tid = tv.dataset.test;
+        state.test[tid] = state.test[tid] === tv.dataset.val ? '' : tv.dataset.val;
+        var vrow = tv.closest('.test-verdict');
+        if (vrow) vrow.querySelectorAll('.test-v').forEach(function (b) {
+          b.classList.toggle('is-on', b.dataset.val === state.test[tid] && state.test[tid] !== '');
+        });
+        updateTestCount();
+        markDirty();
+        return;
+      }
+      var cat = e.target.closest('.defect-cat');
+      if (cat) {
+        var catCard = cat.closest('.slot');
+        var catItem = cat.closest('.defect-item');
+        if (catCard && catItem) setDefectCategory(catCard.dataset.partId, catItem.dataset.defectUid, cat.dataset.cat, catItem);
+        return;
+      }
       var rm = e.target.closest('.slot__remove');
       if (rm) { clearSlot(rm.closest('.slot').dataset.partId); return; }
       var drm = e.target.closest('.defect-item__remove');
@@ -947,7 +1420,7 @@
       if (arm) { removeAttachment(arm.closest('.attach-item').dataset.attachUid); return; }
     });
 
-    // Drag & drop onto a surface slot or the attachments area (delegated)
+    
     els.main.addEventListener('dragover', function (e) {
       var drop = e.target.closest('.slot__drop, .attach-drop');
       if (!drop) return;
@@ -970,7 +1443,7 @@
       setSlotFile(drop.closest('.slot').dataset.partId, files[0]);
     });
 
-    // Action bar
+    
     els.generateBtn.addEventListener('click', generate);
     els.downloadBtn.addEventListener('click', function () {
       if (state.lastBlob) triggerDownload(state.lastBlob, state.lastFolder + '.zip');
@@ -988,22 +1461,26 @@
     });
     els.historyBack.addEventListener('click', renderHistoryList);
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && !els.historyModal.hidden) closeHistory();
+      if (e.key !== 'Escape') return;
+      if (!els.scanModal.hidden) stopScan();
+      else if (!els.historyModal.hidden) closeHistory();
     });
 
-    // Stop the browser from opening a file dropped outside a drop zone.
+    
     window.addEventListener('dragover', function (e) { e.preventDefault(); });
     window.addEventListener('drop', function (e) {
       if (!(e.target.closest && e.target.closest('.slot__drop, .attach-drop'))) e.preventDefault();
     });
 
-    // Best-effort cleanup of any live object URLs on unload.
+    
     window.addEventListener('pagehide', function () {
+      stopScan();
       PARTS.forEach(function (p) {
         var s = state.slots[p.id];
         if (s.previewUrl) URL.revokeObjectURL(s.previewUrl);
         s.defects.forEach(function (d) { if (d.previewUrl) URL.revokeObjectURL(d.previewUrl); });
       });
+      state.attachments.forEach(function (a) { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl); });
       revokeDetailUrls();
     });
   }
@@ -1012,8 +1489,11 @@
 
   renderSlots();
   renderAttachments();
+  renderFeatures();
+  renderTestReport();
   state.model = els.modelInput.value || '';
   state.unit = els.unitInput.value || '01';
+  state.inspector = els.inspectorInput.value || '';
   wire();
   updateCounts();
   updateFolderPreview();

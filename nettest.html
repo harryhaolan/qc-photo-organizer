@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>上传诊断 nettest</title>
+<style>
+  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 14px; color: #222; }
+  h2 { font-size: 17px; margin: 16px 0 6px; }
+  pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f5; padding: 10px;
+        border-radius: 8px; font-size: 13px; margin: 6px 0; }
+  .ok { color: #0a7f2e; font-weight: 700; }
+  .bad { color: #c0271a; font-weight: 700; }
+  .pend { color: #b06a00; }
+</style>
+</head>
+<body>
+<h1>产品质检拍照整理 · 上传诊断</h1>
+<p>这一页会自动跑 3 个测试,把每一步结果直接显示出来。截图发回即可。</p>
+
+<h2>0. 这是哪个浏览器(userAgent)</h2>
+<pre id="ua">读取中…</pre>
+
+<h2>1. GET 配置(应当成功)</h2>
+<pre id="t1" class="pend">运行中…</pre>
+
+<h2>2. 原生 fetch 预检+PUT(不经过 SDK)</h2>
+<pre id="t2" class="pend">运行中…</pre>
+
+<h2>3. OSS SDK 上传(和正式 App 一样的路径)</h2>
+<pre id="t3" class="pend">运行中…</pre>
+
+<h2>4. 按大小分档上传(找出从多大开始失败)</h2>
+<pre id="t4" class="pend">等待第 1、3 步完成后开始…</pre>
+
+<h2>5. 复刻正式 App:真实 JSZip + 线上 storage-oss.js 的 upload()</h2>
+<pre id="t5" class="pend">等第 4 步完成后开始…</pre>
+
+<script src="lib/aliyun-oss-sdk.min.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var CONFIG_URL = 'https://haoyao-qc.oss-cn-shenzhen.aliyuncs.com/public/qc-config.json';
+  var $ = function (id) { return document.getElementById(id); };
+  function set(id, cls, txt) { var e = $(id); e.className = cls; e.textContent = txt; }
+
+  // 0) UA
+  set('ua', '', navigator.userAgent + '\n\nstandalone=' + (window.navigator.standalone) +
+            '  OSS_SDK_loaded=' + (!!window.OSS));
+
+  var cfg = null;
+
+  // 1) GET config
+  fetch(CONFIG_URL + '?t=' + (new Date().getTime()), { cache: 'no-store' })
+    .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (j) {
+      cfg = j;
+      set('t1', 'ok', '✅ GET 成功,provider=' + j.provider + ' region=' + (j.oss && j.oss.region));
+      runT2();
+      runT3();
+    })
+    .catch(function (e) {
+      set('t1', 'bad', '❌ GET 失败:' + (e && e.message ? e.message : e));
+    });
+
+  // 2) 原生 fetch PUT(会触发 OPTIONS 预检)。不带签名,预期服务器返回 403,
+  //    但只要"能拿到 HTTP 响应"就说明预检通过、PUT 方法可达。若变成 network error,
+  //    说明这个浏览器把预检/PUT 拦了。
+  function runT2() {
+    var url = 'https://haoyao-qc.oss-cn-shenzhen.aliyuncs.com/records/nettest-fetch.txt';
+    var t0 = Date.now();
+    fetch(url, { method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: 'hi' })
+      .then(function (r) {
+        set('t2', 'ok', '✅ 预检+PUT 可达。HTTP ' + r.status +
+            '(403 也算成功,说明请求真的到达了 OSS)。耗时 ' + (Date.now() - t0) + 'ms');
+      })
+      .catch(function (e) {
+        set('t2', 'bad', '❌ 原生 PUT 直接网络失败(预检被拦):' +
+            (e && e.message ? e.message : e) + '。耗时 ' + (Date.now() - t0) + 'ms\n' +
+            '→ 这就是 App 上传失败的同一根因。');
+      });
+  }
+
+  // 3) OSS SDK 真实签名上传(和正式 App 完全一致)
+  function runT3() {
+    if (!cfg || cfg.provider !== 'oss' || !window.OSS) {
+      set('t3', 'bad', '跳过:配置或 SDK 没就绪');
+      return;
+    }
+    var o = cfg.oss;
+    var client = new window.OSS({
+      region: o.region, bucket: o.bucket,
+      accessKeyId: o.accessKeyId, accessKeySecret: o.accessKeySecret, secure: true
+    });
+    var key = 'records/nettest-sdk-' + Date.now() + '.txt';
+    var blob = new Blob(['hello from nettest'], { type: 'text/plain' });
+    var t0 = Date.now();
+    client.put(key, blob).then(function (r) {
+      set('t3', 'ok', '✅ SDK 上传成功!key=' + r.name + '  耗时 ' + (Date.now() - t0) + 'ms\n' +
+          '→ 说明上传链路其实是通的。');
+      runT4(client);
+    }).catch(function (e) {
+      set('t3', 'bad', '❌ SDK 上传失败:name=' + (e && e.name) + ' code=' + (e && e.code) +
+          ' status=' + (e && e.status) + '\nmsg=' + (e && e.message ? e.message : e) +
+          '\n耗时 ' + (Date.now() - t0) + 'ms');
+      runT4(client);
+    });
+  }
+
+  // 4) 按大小分档:依次上传 100KB / 1MB / 3MB / 8MB,看从哪一档开始失败
+  function runT4(client) {
+    var sizes = [100 * 1024, 1024 * 1024, 3 * 1024 * 1024, 8 * 1024 * 1024];
+    var labels = ['100KB', '1MB', '3MB', '8MB'];
+    var lines = [];
+    function render() { set('t4', '', lines.join('\n')); }
+    lines.push('开始分档上传…'); render();
+
+    function makeBlob(n) {
+      // 用一个 64KB 的块重复拼,避免一次性分配大字符串
+      var chunk = new Uint8Array(64 * 1024);
+      for (var i = 0; i < chunk.length; i++) chunk[i] = i & 255;
+      var parts = [];
+      var made = 0;
+      while (made < n) { parts.push(chunk); made += chunk.length; }
+      return new Blob(parts, { type: 'application/zip' });
+    }
+
+    function step(i) {
+      if (i >= sizes.length) { lines.push('—— 分档测试结束 ——'); render(); return; }
+      var blob = makeBlob(sizes[i]);
+      var key = 'records/nettest-size-' + labels[i] + '-' + Date.now() + '.bin';
+      var t0 = Date.now();
+      lines.push(labels[i] + ' 上传中…'); render();
+      client.put(key, blob).then(function () {
+        lines[lines.length - 1] = '✅ ' + labels[i] + ' 成功(' + (Date.now() - t0) + 'ms)';
+        render(); step(i + 1);
+      }).catch(function (e) {
+        lines[lines.length - 1] = '❌ ' + labels[i] + ' 失败:' +
+          (e && e.message ? e.message : e) + '(' + (Date.now() - t0) + 'ms)';
+        render(); step(i + 1);
+      });
+    }
+    step(0);
+    runT5();
+  }
+
+  // 5) 完全复刻正式 App:真实 JSZip 打包 + 动态加载线上 storage-oss.js,
+  //    然后调用 window.QCStorage.upload(rec)。这条路径和 App 一模一样。
+  function runT5() {
+    if (!cfg) { set('t5', 'bad', '跳过:配置没就绪'); return; }
+    if (!window.JSZip) { set('t5', 'bad', '跳过:JSZip 没加载'); return; }
+    set('t5', 'pend', '正在用 JSZip 打一个真实 ZIP(含一张 ~2MB 假照片)…');
+
+    // 让线上 storage-oss.js 能接管:先把配置塞进全局
+    window.QC_CONFIG = cfg;
+
+    var zip = new window.JSZip();
+    var photo = new Uint8Array(2 * 1024 * 1024);
+    for (var i = 0; i < photo.length; i++) photo[i] = (i * 7) & 255;
+    zip.file('00-正面.jpg', photo);
+    zip.file('质检备注.csv', '部位,有无瑕疵\n正面,无\n');
+
+    zip.generateAsync({ type: 'blob' }).then(function (zipBlob) {
+      set('t5', 'pend', 'ZIP 打好了(' + Math.round(zipBlob.size / 1024) + 'KB),' +
+          '现在动态加载线上 storage-oss.js 并调用 upload()…');
+      var s = document.createElement('script');
+      s.src = 'lib/storage-oss.js?nettest=' + Date.now(); // 绕过缓存,强制取最新
+      s.onload = function () {
+        if (!window.QCStorage || !window.QCStorage.configured()) {
+          set('t5', 'bad', '❌ storage-oss.js 加载了,但 QCStorage.configured()=false' +
+              '(说明线上这份 storage-oss.js 自己判定"没配置好",这很可能就是 App 上传失败的真因)');
+          return;
+        }
+        var t0 = Date.now();
+        window.QCStorage.upload({
+          blob: zipBlob, folder: 'NETTEST-T-01', model: 'NETTEST', unit: '01',
+          inspector: 'diag', photoCount: 1, defectCount: 0,
+          defectSurfaceCount: 0, attachCount: 0, notes: []
+        }).then(function (r) {
+          set('t5', 'ok', '✅ 复刻 App 路径上传成功!path=' + (r && r.path) +
+              '  耗时 ' + (Date.now() - t0) + 'ms\n→ 那 App 失败就不是代码本身,而是真机当时的状态/缓存。');
+        }).catch(function (e) {
+          set('t5', 'bad', '❌ 复刻 App 路径上传失败(这就重现了 App 的 bug!):\n' +
+              (e && e.message ? e.message : e) + '\n耗时 ' + (Date.now() - t0) + 'ms');
+        });
+      };
+      s.onerror = function () { set('t5', 'bad', '❌ storage-oss.js 加载失败'); };
+      document.body.appendChild(s);
+    }).catch(function (e) {
+      set('t5', 'bad', '❌ JSZip 打包失败:' + (e && e.message ? e.message : e));
+    });
+  }
+})();
+</script>
+</body>
+</html>
